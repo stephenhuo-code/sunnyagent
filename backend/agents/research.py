@@ -28,4 +28,5 @@ register_agent(
     ),
     graph=_agent,
     tools=_tools,
+    icon="search",
 )

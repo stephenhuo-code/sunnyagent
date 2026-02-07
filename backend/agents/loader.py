@@ -80,6 +80,7 @@ def _register_package(pkg_dir: Path) -> None:
         name=name,
         description=description,
         graph=agent,
+        show_in_selector=False,
     )
 
     skill_count = len(list(skills_dir.iterdir())) if skills_dir.is_dir() else 0

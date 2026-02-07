@@ -14,7 +14,7 @@ export default function ChatContainer() {
   }, []);
 
   const { messages, isStreaming, threadId, sendMessage, cancel, newThread } =
-    useChat(agents);
+    useChat();
 
   return (
     <div className="chat-container">

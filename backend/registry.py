@@ -13,6 +13,8 @@ class AgentEntry:
     description: str
     graph: CompiledStateGraph
     tools: list = field(default_factory=list)
+    icon: str = "bot"
+    show_in_selector: bool = True
 
 
 AGENT_REGISTRY: dict[str, AgentEntry] = {}
@@ -23,6 +25,8 @@ def register_agent(
     description: str,
     graph: CompiledStateGraph,
     tools: list | None = None,
+    icon: str = "bot",
+    show_in_selector: bool = True,
 ):
     """Register an agent so the supervisor and general agent can discover it."""
     AGENT_REGISTRY[name] = AgentEntry(
@@ -30,6 +34,8 @@ def register_agent(
         description=description,
         graph=graph,
         tools=tools or [],
+        icon=icon,
+        show_in_selector=show_in_selector,
     )
 
 

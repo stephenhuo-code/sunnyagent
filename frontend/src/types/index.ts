@@ -2,6 +2,7 @@
 export interface Agent {
   name: string;
   description: string;
+  icon: string;
 }
 
 /** SSE event types from the backend */
@@ -15,6 +16,7 @@ export type SSEEvent =
       event: "tool_call_result";
       data: { id: string; name: string; status: string; output: string };
     }
+  | { event: "thinking"; data: { content: string } }
   | { event: "error"; data: { message: string } }
   | { event: "done"; data: Record<string, never> };
 
@@ -27,10 +29,19 @@ export interface ToolCall {
   output?: string;
 }
 
+/** Thinking bubble state for agent reasoning steps */
+export interface ThinkingState {
+  steps: string[];
+  isThinking: boolean;
+  startTime: number;
+  durationSeconds: number;
+}
+
 /** A single chat message */
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   toolCalls?: ToolCall[];
+  thinking?: ThinkingState;
 }

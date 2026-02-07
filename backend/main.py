@@ -59,10 +59,11 @@ app.add_middleware(
 
 @app.get("/api/agents")
 async def list_agents():
-    """Return all registered agents (name + description)."""
+    """Return agents that should appear in the UI selector."""
     return [
-        {"name": entry.name, "description": entry.description}
+        {"name": entry.name, "description": entry.description, "icon": entry.icon}
         for entry in AGENT_REGISTRY.values()
+        if entry.show_in_selector
     ]
 
 

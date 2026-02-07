@@ -51,4 +51,5 @@ def build_general_agent():
             "Can use all tools and delegate to any specialist agent."
         ),
         graph=agent,
+        icon="sparkles",
     )

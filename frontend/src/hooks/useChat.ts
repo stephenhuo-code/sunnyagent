@@ -1,42 +1,21 @@
 import { useCallback, useRef, useState } from "react";
 import { createThread, streamChat } from "../api/client";
-import type { Agent, Message, ToolCall } from "../types";
-
-/** Parse /command prefix: "/research AI news" → { agent: "research", message: "AI news" } */
-function parseSlashCommand(
-  text: string,
-  agents: Agent[],
-): { agent?: string; message: string } {
-  const match = text.match(/^\/(\S+)\s+([\s\S]+)/);
-  if (match) {
-    const name = match[1];
-    if (agents.some((a) => a.name === name)) {
-      return { agent: name, message: match[2] };
-    }
-  }
-  return { message: text };
-}
+import type { Message, ThinkingState, ToolCall } from "../types";
 
 let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}`;
 }
 
-export function useChat(agents: Agent[]) {
+export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, agent?: string) => {
       if (isStreaming || !text.trim()) return;
-
-      // Parse /command prefix
-      const { agent, message: actualMessage } = parseSlashCommand(
-        text.trim(),
-        agents,
-      );
 
       // Create thread on first message
       let currentThreadId = threadId;
@@ -45,17 +24,26 @@ export function useChat(agents: Agent[]) {
         setThreadId(currentThreadId);
       }
 
+      const actualMessage = text.trim();
+
       // Add user message
-      const userMsg: Message = { id: nextId(), role: "user", content: text };
+      const userMsg: Message = { id: nextId(), role: "user", content: actualMessage };
       setMessages((prev) => [...prev, userMsg]);
 
       // Prepare assistant message placeholder
       const assistantId = nextId();
+      const thinkingStart: ThinkingState = {
+        steps: [],
+        isThinking: true,
+        startTime: Date.now(),
+        durationSeconds: 0,
+      };
       const assistantMsg: Message = {
         id: assistantId,
         role: "assistant",
         content: "",
         toolCalls: [],
+        thinking: thinkingStart,
       };
       setMessages((prev) => [...prev, assistantMsg]);
       setIsStreaming(true);
@@ -73,11 +61,24 @@ export function useChat(agents: Agent[]) {
           switch (event.event) {
             case "text_delta":
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: m.content + event.data.text }
-                    : m,
-                ),
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  const updatedThinking =
+                    m.thinking?.isThinking
+                      ? {
+                          ...m.thinking,
+                          isThinking: false,
+                          durationSeconds: Math.round(
+                            (Date.now() - m.thinking.startTime) / 1000,
+                          ),
+                        }
+                      : m.thinking;
+                  return {
+                    ...m,
+                    content: m.content + event.data.text,
+                    thinking: updatedThinking,
+                  };
+                }),
               );
               break;
 
@@ -122,6 +123,30 @@ export function useChat(agents: Agent[]) {
               );
               break;
 
+            case "thinking":
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        thinking: {
+                          ...(m.thinking ?? {
+                            steps: [],
+                            isThinking: true,
+                            startTime: Date.now(),
+                            durationSeconds: 0,
+                          }),
+                          steps: [
+                            ...(m.thinking?.steps ?? []),
+                            event.data.content,
+                          ],
+                        },
+                      }
+                    : m,
+                ),
+              );
+              break;
+
             case "error":
               setMessages((prev) =>
                 prev.map((m) =>
@@ -137,6 +162,24 @@ export function useChat(agents: Agent[]) {
               break;
 
             case "done":
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  if (m.thinking?.isThinking) {
+                    return {
+                      ...m,
+                      thinking: {
+                        ...m.thinking,
+                        isThinking: false,
+                        durationSeconds: Math.round(
+                          (Date.now() - m.thinking.startTime) / 1000,
+                        ),
+                      },
+                    };
+                  }
+                  return m;
+                }),
+              );
               break;
           }
         }
@@ -159,7 +202,7 @@ export function useChat(agents: Agent[]) {
         abortRef.current = null;
       }
     },
-    [isStreaming, threadId, agents],
+    [isStreaming, threadId],
   );
 
   const cancel = useCallback(() => {

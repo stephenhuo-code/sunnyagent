@@ -13,8 +13,19 @@ from collections.abc import AsyncGenerator
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
-# Tools that are purely internal routing — never shown to the user.
-_HIDDEN_TOOLS = {"route"}
+# Tools whose output is surfaced as "thinking" SSE events instead of tool_call cards.
+_THINKING_TOOLS = {"route", "think_tool"}
+
+
+def _format_thinking_content(tool_name: str, args: dict) -> str:
+    """Extract a human-readable thinking step from a thinking tool call."""
+    if tool_name == "route":
+        agent = args.get("agent_name", "unknown")
+        desc = args.get("task_description", "")
+        return f"Routing to {agent}: {desc}"
+    if tool_name == "think_tool":
+        return args.get("reflection", str(args))
+    return str(args)
 
 
 def _format_sse(event: str, data: dict) -> dict:
@@ -103,8 +114,8 @@ async def stream_agent_response(
                 tool_id = getattr(msg, "tool_call_id", None)
                 tool_name = getattr(msg, "name", "")
 
-                # Skip results for hidden tools (e.g. route)
-                if tool_name in _HIDDEN_TOOLS or tool_id in hidden_tool_call_ids:
+                # Skip results for thinking tools (route, think_tool)
+                if tool_name in _THINKING_TOOLS or tool_id in hidden_tool_call_ids:
                     continue
 
                 tool_status = getattr(msg, "status", "success")
@@ -176,13 +187,6 @@ async def stream_agent_response(
                     if buffer_name is None:
                         continue
 
-                    # Skip hidden tools entirely
-                    if buffer_name in _HIDDEN_TOOLS:
-                        if buffer_id:
-                            hidden_tool_call_ids.add(buffer_id)
-                        tool_call_buffers.pop(buffer_key, None)
-                        continue
-
                     parsed_args = buffer.get("args")
                     if isinstance(parsed_args, str):
                         if not parsed_args:
@@ -196,6 +200,19 @@ async def stream_agent_response(
 
                     if not isinstance(parsed_args, dict):
                         parsed_args = {"value": parsed_args}
+
+                    # Emit thinking tools as "thinking" events
+                    if buffer_name in _THINKING_TOOLS:
+                        if buffer_id is not None and buffer_id not in displayed_tool_ids:
+                            displayed_tool_ids.add(buffer_id)
+                            hidden_tool_call_ids.add(buffer_id)
+                            yield _format_sse("thinking", {
+                                "content": _format_thinking_content(
+                                    buffer_name, parsed_args
+                                ),
+                            })
+                        tool_call_buffers.pop(buffer_key, None)
+                        continue
 
                     # Emit tool_call_start once per tool call ID
                     if buffer_id is not None and buffer_id not in displayed_tool_ids:
