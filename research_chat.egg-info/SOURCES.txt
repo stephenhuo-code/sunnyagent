@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+backend/__init__.py
+backend/main.py
+backend/models.py
+backend/prompts.py
+backend/registry.py
+backend/research_prompts.py
+backend/research_tools.py
+backend/stream_handler.py
+backend/supervisor.py
+research_chat.egg-info/PKG-INFO
+research_chat.egg-info/SOURCES.txt
+research_chat.egg-info/dependency_links.txt
+research_chat.egg-info/requires.txt
+research_chat.egg-info/top_level.txt
