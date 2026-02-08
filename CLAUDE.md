@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research Chat — a full-stack web app (FastAPI + React) with a LangGraph supervisor that routes user messages to specialized deep agents for web research, SQL database queries, and multi-step orchestration.
+Research Chat — a full-stack web app (FastAPI + React) with a LangGraph supervisor that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution.
 
 ## Development Commands
 
@@ -67,6 +67,28 @@ Backend streams LangGraph output as SSE events through this chain:
 
 Threads are persisted in `threads.db` (SQLite) via LangGraph's `AsyncSqliteSaver`. Thread IDs are 8-char hex strings from `uuid4`.
 
+### Container Pool & Sandbox
+
+Docker-based code execution with pre-warmed containers for fast response (~10-50ms):
+
+- **container_pool.py** ([backend/tools/container_pool.py](backend/tools/container_pool.py)): Manages 5 pre-warmed containers with automatic recycling after 100 uses
+- **sandbox.py** ([backend/tools/sandbox.py](backend/tools/sandbox.py)): `execute_python()` and `execute_python_with_file()` tools for code execution
+- **file_tools.py** ([backend/tools/file_tools.py](backend/tools/file_tools.py)): `read_uploaded_file()` for parsing PDF/Word/Excel/PPT files
+
+Security: network disabled, all capabilities dropped, no privilege escalation allowed.
+
+Pre-installed packages in sandbox: `python-pptx`, `python-docx`, `openpyxl`, `pandas`, `numpy`, `Pillow`, `matplotlib`, `pypdf`, `pdfplumber`, `reportlab`.
+
+### Skills System
+
+Skills provide domain-specific instructions that can be injected into agent prompts:
+
+- **Registry** ([backend/skills/registry.py](backend/skills/registry.py)): `SKILL_REGISTRY` global dict with `SkillEntry` objects
+- **Loader** ([backend/skills/loader.py](backend/skills/loader.py)): Auto-loads from `skills/anthropic/skills/` (git submodule) and `skills/custom/`
+- **Format**: Each skill is a directory with `SKILL.md` containing YAML frontmatter (`name`, `description`) + markdown instructions
+
+When a skill is requested via `ChatRequest.skill`, the skill instructions are injected into the user message.
+
 ### Frontend
 
 React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {MessageList (→ MessageBubble → ToolCallCard), InputBar}`. The InputBar supports `/command` syntax to route directly to a named agent (bypassing the supervisor).
@@ -85,6 +107,8 @@ React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {Mess
 
 ## API Endpoints
 
+### Chat & Threads
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/chat` | POST | Send message, returns SSE stream |
@@ -92,9 +116,29 @@ React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {Mess
 | `/api/threads/{id}/history` | GET | Get thread message history |
 | `/api/agents` | GET | List registered agents |
 
+**ChatRequest fields**: `thread_id`, `message`, `agent` (skip supervisor), `skill` (inject skill instructions), `file_ids` (uploaded files)
+
+### Skills
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/skills` | GET | List all skills (name + description) |
+| `/api/skills/{name}` | GET | Get skill details with full instructions |
+
+### Files
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/files/upload` | POST | Upload file (max 10MB) |
+| `/api/files/{id}/download` | GET | Download uploaded file |
+| `/api/files/{id}/content` | GET | Preview text file content |
+| `/api/files/{id}/{filename}` | GET | Download generated file (from sandbox)
+
 ## Key Dependencies
 
 - **deepagents** (>=0.2.6) — deep agent framework with middleware
 - **langgraph** / **langchain** — agent orchestration and LLM integration
 - **tavily-python** — web search API
 - **sse-starlette** — server-sent events for FastAPI
+- **docker** — container pool for sandboxed code execution
+- **pypdf** / **python-docx** / **openpyxl** / **python-pptx** — document parsing
