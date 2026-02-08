@@ -69,27 +69,8 @@ async def stream_agent_response(
     """
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 加载已有的对话历史
-    existing_messages = []
-    try:
-        state = await agent.aget_state(config)
-        print(f"[DEBUG] state={state}")
-        print(f"[DEBUG] state.values={state.values if state else 'None'}")
-        if state and state.values:
-            existing_messages = state.values.get("messages", [])
-            print(f"[DEBUG] loaded {len(existing_messages)} existing messages")
-            for i, msg in enumerate(existing_messages):
-                print(f"[DEBUG] msg[{i}]: type={type(msg).__name__}, content={str(msg.content)[:100]}")
-    except Exception as e:
-        print(f"[DEBUG] failed to load state: {e}")
-        pass  # 新 thread 或加载失败时使用空历史
-
-    # 创建新的用户消息
-    new_user_message = HumanMessage(content=message)
-
-    # 将完整历史传给 agent
-    stream_input: dict = {"messages": existing_messages + [new_user_message]}
-    print(f"[DEBUG] stream_input has {len(stream_input['messages'])} messages")
+    # Checkpointer handles history automatically - just send the new message
+    stream_input: dict = {"messages": [HumanMessage(content=message)]}
 
     # Buffers for tool call streaming (args arrive as JSON fragments)
     tool_call_buffers: dict[str | int, dict] = {}
@@ -97,7 +78,6 @@ async def stream_agent_response(
     # Track hidden tool call IDs so we can also suppress their ToolMessage results
     hidden_tool_call_ids: set[str] = set()
 
-    print("[STREAM] Starting...")
     try:
         async for chunk in agent.astream(
             stream_input,
@@ -109,7 +89,6 @@ async def stream_agent_response(
                 continue
 
             namespace, current_stream_mode, data = chunk
-            print(f"[CHUNK] namespace={namespace}, mode={current_stream_mode}, data_type={type(data).__name__}")
 
             # --- UPDATES stream: skip for now (no HITL in this app) ---
             if current_stream_mode == "updates":
@@ -172,7 +151,6 @@ async def stream_agent_response(
                     chunk_args = block.get("args")
                     chunk_id = block.get("id")
                     chunk_index = block.get("index")
-                    print(f"[TOOL_CALL] name={chunk_name}, id={chunk_id}, args_type={type(chunk_args).__name__}")
 
                     # Determine buffer key
                     if chunk_index is not None:
@@ -217,9 +195,7 @@ async def stream_agent_response(
                             continue
                         try:
                             parsed_args = json.loads(parsed_args)
-                            print(f"[JSON_PARSE] Successfully parsed args for {buffer_name}")
                         except json.JSONDecodeError:
-                            print(f"[JSON_ERROR] Failed to parse args for {buffer_name}: {parsed_args[:100]}")
                             continue
                     elif parsed_args is None:
                         continue
@@ -243,7 +219,6 @@ async def stream_agent_response(
                     # Emit tool_call_start once per tool call ID
                     if buffer_id is not None and buffer_id not in displayed_tool_ids:
                         displayed_tool_ids.add(buffer_id)
-                        print(f"[EMIT_TOOL_START] id={buffer_id}, name={buffer_name}")
                         yield _format_sse("tool_call_start", {
                             "id": buffer_id,
                             "name": buffer_name,
@@ -253,8 +228,6 @@ async def stream_agent_response(
                     tool_call_buffers.pop(buffer_key, None)
 
     except Exception as e:
-        print(f"[STREAM_ERROR] {e}")
         yield _format_sse("error", {"message": str(e)})
 
-    print("[STREAM_END]")
     yield _format_sse("done", {})

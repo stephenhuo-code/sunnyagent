@@ -1,6 +1,8 @@
 """FastAPI application for the deep research chat interface."""
 
+import atexit
 import logging
+import signal
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,7 +22,7 @@ from backend.registry import AGENT_REGISTRY
 from backend.skills import SKILL_REGISTRY
 from backend.models import ChatRequest, ThreadCreate
 from backend.stream_handler import stream_agent_response
-from backend.tools.container_pool import get_pool, shutdown_pool
+from backend.tools.container_pool import get_pool, shutdown_pool, cleanup_all_sunnyagent_containers
 
 # Load environment variables from .env
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -28,6 +30,30 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # Global state
 _agent = None
 _checkpointer = None
+
+
+def _sync_cleanup():
+    """同步清理，用于 atexit 和信号处理"""
+    import asyncio
+    try:
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(cleanup_all_sunnyagent_containers())
+        loop.close()
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+
+
+def _signal_handler(signum, frame):
+    """处理终止信号"""
+    logger.info(f"Received signal {signum}, cleaning up...")
+    _sync_cleanup()
+    raise SystemExit(0)
+
+
+# 注册处理器
+atexit.register(_sync_cleanup)
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
 
 
 @asynccontextmanager
@@ -155,16 +181,14 @@ async def chat(request: ChatRequest):
     # Skill-based routing: inject skill instructions into the message
     if request.skill and request.skill in SKILL_REGISTRY:
         skill_instructions = SKILL_REGISTRY[request.skill].load_instructions()
-        message = f"[SKILL: {request.skill}]\n{skill_instructions}\n---\nUser request: {request.message}"
-        target = AGENT_REGISTRY["general"].graph
-    # Direct agent routing: /command → specific agent
-    elif request.agent and request.agent in AGENT_REGISTRY:
-        target = AGENT_REGISTRY[request.agent].graph
-    # File upload routing: use general agent (only it has read_uploaded_file tool)
-    elif request.file_ids:
-        target = AGENT_REGISTRY["general"].graph
-    else:
-        target = _agent  # Supervisor handles routing
+        message = f"[SKILL: {request.skill}]\n{skill_instructions}\n---\nUser request: {message}"
+
+    # Direct agent routing: /command → inject directive for supervisor to route
+    if request.agent and request.agent in AGENT_REGISTRY:
+        message = f"[ROUTE_TO: {request.agent}]\n{message}"
+
+    # Always use supervisor to maintain checkpointer consistency
+    target = _agent
 
     async def event_generator():
         try:
