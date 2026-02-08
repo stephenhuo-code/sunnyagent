@@ -5,6 +5,12 @@ export interface Agent {
   icon: string;
 }
 
+/** A registered skill */
+export interface Skill {
+  name: string;
+  description: string;
+}
+
 /** SSE event types from the backend */
 export type SSEEvent =
   | { event: "text_delta"; data: { text: string } }
@@ -37,6 +43,35 @@ export interface ThinkingState {
   durationSeconds: number;
 }
 
+/** File attachment in a message */
+export interface FileAttachment {
+  file_id: string;
+  filename: string;
+  size: number;
+  content_type: string;
+  source: "user" | "agent";
+  download_url: string;
+}
+
+/** Uploaded file info returned from server */
+export interface UploadedFile {
+  file_id: string;
+  filename: string;
+  size: number;
+  content_type: string;
+  download_url: string;
+}
+
+/** File being uploaded with progress */
+export interface UploadingFile {
+  id: string;
+  file: File;
+  progress: number;
+  status: "uploading" | "completed" | "error";
+  uploadedFile?: UploadedFile;
+  error?: string;
+}
+
 /** A single chat message */
 export interface Message {
   id: string;
@@ -44,4 +79,5 @@ export interface Message {
   content: string;
   toolCalls?: ToolCall[];
   thinking?: ThinkingState;
+  files?: FileAttachment[];
 }

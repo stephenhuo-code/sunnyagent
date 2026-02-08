@@ -1,4 +1,4 @@
-import type { Agent, SSEEvent } from "../types";
+import type { Agent, Skill, SSEEvent, UploadedFile } from "../types";
 
 /**
  * Stream chat responses from the backend via SSE.
@@ -11,9 +11,13 @@ export async function* streamChat(
   message: string,
   signal: AbortSignal,
   agent?: string,
+  skill?: string,
+  fileIds?: string[],
 ): AsyncGenerator<SSEEvent> {
-  const body: Record<string, string> = { thread_id: threadId, message };
+  const body: Record<string, unknown> = { thread_id: threadId, message };
   if (agent) body.agent = agent;
+  if (skill) body.skill = skill;
+  if (fileIds && fileIds.length > 0) body.file_ids = fileIds;
 
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -46,6 +50,7 @@ export async function* streamChat(
       } else if (line.startsWith("data: ") && currentEvent) {
         try {
           const data = JSON.parse(line.slice(6));
+          console.log(`[SSE_EVENT] event=${currentEvent}, data=`, data);
           yield { event: currentEvent, data } as SSEEvent;
         } catch {
           // Skip malformed JSON
@@ -67,5 +72,59 @@ export async function createThread(): Promise<string> {
 /** Fetch all registered agents. */
 export async function getAgents(): Promise<Agent[]> {
   const response = await fetch("/api/agents");
+  return response.json();
+}
+
+/** Fetch all registered skills. */
+export async function getSkills(): Promise<Skill[]> {
+  const response = await fetch("/api/skills");
+  return response.json();
+}
+
+/** Upload a file with progress tracking. */
+export function uploadFile(
+  file: File,
+  onProgress?: (progress: number) => void
+): Promise<UploadedFile> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.detail || "Upload failed"));
+        } catch {
+          reject(new Error("Upload failed"));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error("Network error"));
+    };
+
+    xhr.open("POST", "/api/files/upload");
+    xhr.send(formData);
+  });
+}
+
+/** Fetch file content for preview. */
+export async function getFileContent(fileId: string): Promise<{ content: string; filename: string }> {
+  const response = await fetch(`/api/files/${fileId}/content`);
+  if (!response.ok) {
+    throw new Error("Failed to load file content");
+  }
   return response.json();
 }

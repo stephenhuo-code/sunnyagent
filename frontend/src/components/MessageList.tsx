@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import MessageBubble from "./MessageBubble";
-import type { Message } from "../types";
+import type { Message, FileAttachment } from "../types";
 
 interface MessageListProps {
   messages: Message[];
   isStreaming: boolean;
+  onFileClick?: (file: FileAttachment) => void;
 }
 
-export default function MessageList({ messages, isStreaming }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, onFileClick }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -28,7 +29,7 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
     return (
       <div className="message-list empty" ref={containerRef}>
         <div className="welcome">
-          <h2>Deep Research Agent</h2>
+          <h2>Sunny Agents</h2>
           <p>Ask any research question and the agent will search the web, analyze sources, and write a comprehensive report.</p>
           <div className="examples">
             <span>Try:</span>
@@ -44,7 +45,7 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
   return (
     <div className="message-list" ref={containerRef}>
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble key={msg.id} message={msg} onFileClick={onFileClick} />
       ))}
       {isStreaming && (
         <div className="streaming-indicator">

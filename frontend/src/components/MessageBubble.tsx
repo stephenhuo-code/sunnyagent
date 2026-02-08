@@ -2,13 +2,15 @@ import Markdown from "react-markdown";
 import { User, Bot } from "lucide-react";
 import ToolCallCard from "./ToolCallCard";
 import ThinkingBubble from "./ThinkingBubble";
-import type { Message } from "../types";
+import FileCard from "./FileCard";
+import type { Message, FileAttachment } from "../types";
 
 interface MessageBubbleProps {
   message: Message;
+  onFileClick?: (file: FileAttachment) => void;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, onFileClick }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
@@ -17,6 +19,18 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         {isUser ? <User size={18} /> : <Bot size={18} />}
       </div>
       <div className="message-body">
+        {/* File attachments for user messages */}
+        {isUser && message.files && message.files.length > 0 && (
+          <div className="message-files">
+            {message.files.map((file) => (
+              <FileCard
+                key={file.file_id}
+                file={file}
+                onClick={() => onFileClick?.(file)}
+              />
+            ))}
+          </div>
+        )}
         {/* Thinking bubble (shown before tool calls and content) */}
         {message.thinking &&
           (message.thinking.isThinking ||
@@ -34,6 +48,18 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             ) : (
               <Markdown>{message.content}</Markdown>
             )}
+          </div>
+        )}
+        {/* File attachments for assistant messages (after content) */}
+        {!isUser && message.files && message.files.length > 0 && (
+          <div className="message-files">
+            {message.files.map((file) => (
+              <FileCard
+                key={file.file_id}
+                file={file}
+                onClick={() => onFileClick?.(file)}
+              />
+            ))}
           </div>
         )}
       </div>

@@ -1,10 +1,24 @@
 import { useCallback, useRef, useState } from "react";
 import { createThread, streamChat } from "../api/client";
-import type { Message, ThinkingState, ToolCall } from "../types";
+import type { Message, ThinkingState, ToolCall, UploadedFile } from "../types";
 
 let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}`;
+}
+
+/**
+ * Parse slash commands from message text.
+ * Returns skill name if message starts with /skillname, otherwise null.
+ * Agent-style commands (like /research) are handled separately.
+ */
+function parseSkillCommand(text: string): { skill: string | null; message: string } {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/([a-z0-9-]+)\s*(.*)/i);
+  if (!match) {
+    return { skill: null, message: trimmed };
+  }
+  return { skill: match[1].toLowerCase(), message: match[2] || trimmed };
 }
 
 export function useChat() {
@@ -14,8 +28,10 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (text: string, agent?: string) => {
-      if (isStreaming || !text.trim()) return;
+    async (text: string, agent?: string, uploadedFiles?: UploadedFile[]) => {
+      if (isStreaming) return;
+      // Allow sending with files even if text is empty
+      if (!text.trim() && (!uploadedFiles || uploadedFiles.length === 0)) return;
 
       // Create thread on first message
       let currentThreadId = threadId;
@@ -24,10 +40,24 @@ export function useChat() {
         setThreadId(currentThreadId);
       }
 
+      // Parse /skill commands (only if no agent explicitly specified)
+      const { skill, message: parsedMessage } = agent ? { skill: null, message: text.trim() } : parseSkillCommand(text);
       const actualMessage = text.trim();
 
-      // Add user message
-      const userMsg: Message = { id: nextId(), role: "user", content: actualMessage };
+      // Add user message with file attachments
+      const userMsg: Message = {
+        id: nextId(),
+        role: "user",
+        content: actualMessage,
+        files: uploadedFiles?.map(f => ({
+          file_id: f.file_id,
+          filename: f.filename,
+          size: f.size,
+          content_type: f.content_type,
+          source: "user" as const,
+          download_url: f.download_url,
+        })),
+      };
       setMessages((prev) => [...prev, userMsg]);
 
       // Prepare assistant message placeholder
@@ -51,13 +81,19 @@ export function useChat() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // Collect file IDs to send
+      const fileIds = uploadedFiles?.map(f => f.file_id);
+
       try {
         for await (const event of streamChat(
           currentThreadId,
-          actualMessage,
+          skill ? parsedMessage : actualMessage,
           controller.signal,
           agent,
+          skill ?? undefined,
+          fileIds,
         )) {
+          console.log(`[CHAT_EVENT] event=${event.event}`, event.data);
           switch (event.event) {
             case "text_delta":
               setMessages((prev) =>
@@ -83,6 +119,7 @@ export function useChat() {
               break;
 
             case "tool_call_start": {
+              console.log(`[TOOL_START] id=${event.data.id}, name=${event.data.name}`, event.data.args);
               const tc: ToolCall = {
                 id: event.data.id,
                 name: event.data.name,
@@ -100,6 +137,7 @@ export function useChat() {
             }
 
             case "tool_call_result":
+              console.log(`[TOOL_RESULT] id=${event.data.id}, status=${event.data.status}`, event.data.output?.slice(0, 200));
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId

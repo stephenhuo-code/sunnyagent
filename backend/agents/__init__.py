@@ -1,10 +1,16 @@
 """Import agent modules to trigger registration.
 
 Order matters:
-1. Built-in specialists (research, sql) register first
-2. Package agents (from packages/ directory) register next
-3. General agent must be last — it discovers all previously registered agents
+1. Skills are loaded first (global skill registry)
+2. Built-in specialists (research, sql) register next
+3. Package agents (from packages/ directory) register next
+4. General agent must be last — it discovers all previously registered agents/skills
 """
+
+from backend.skills import load_all_skills
+
+# Load global skills before agents (agents can reference skills)
+load_all_skills()
 
 from backend.agents import research, sql  # noqa: F401
 from backend.agents.loader import load_package_agents

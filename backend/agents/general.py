@@ -2,10 +2,37 @@
 
 from deepagents import create_deep_agent
 from langchain.chat_models import init_chat_model
+from langchain_core.tools import tool
 
 from backend.registry import AGENT_REGISTRY, get_all_tools, register_agent
+from backend.skills import SKILL_REGISTRY, get_skill_summaries
+from backend.tools.file_tools import read_uploaded_file
+from backend.tools.sandbox import execute_python, execute_python_with_file
 
-GENERAL_PROMPT = """\
+
+@tool
+def activate_skill(skill_name: str) -> str:
+    """Activate a skill to get detailed instructions.
+
+    Use this when a user's request matches a skill's description.
+    The skill instructions will tell you how to accomplish the task.
+
+    Args:
+        skill_name: The name of the skill to activate (e.g., "pdf", "docx")
+
+    Returns:
+        The full skill instructions, or an error message if not found.
+    """
+    skill = SKILL_REGISTRY.get(skill_name)
+    if skill:
+        return skill.load_instructions()
+    return f"Unknown skill: {skill_name}. Available skills: {', '.join(SKILL_REGISTRY.keys())}"
+
+
+def _build_general_prompt() -> str:
+    """Build the general agent prompt with skill summaries."""
+    skills_section = get_skill_summaries()
+    return f"""\
 You are a general-purpose orchestration agent for complex, multi-step tasks.
 
 You have two strategies:
@@ -18,7 +45,22 @@ For complex, multi-step problems:
 - You can run multiple task() calls in parallel for independent sub-tasks.
 - Synthesize all results into a comprehensive final answer.
 
-Prefer delegation to specialists when their expertise matches the sub-task."""
+Prefer delegation to specialists when their expertise matches the sub-task.
+
+## File Generation Tools
+
+When using `execute_python_with_file` to generate files (PPT, Word, Excel, PDF, etc.):
+- The tool returns a markdown download link on success
+- **IMPORTANT**: Always include the download link in your final response to the user
+- Format: After describing what you created, add the download link like:
+  "下载链接：[📥 点击下载 filename.pptx](/api/files/xxx/filename.pptx)"
+
+## Available Skills
+
+Skills provide specialized instructions for specific tasks. When a user's request
+matches a skill description, use activate_skill() to load the full instructions.
+
+{skills_section}"""
 
 
 def build_general_agent():
@@ -36,11 +78,19 @@ def build_general_agent():
             }
         )
 
+    # Include activate_skill tool for skill discovery, sandbox tools, and file reading
+    all_tools = get_all_tools() + [
+        activate_skill,
+        execute_python,
+        execute_python_with_file,
+        read_uploaded_file,
+    ]
+
     agent = create_deep_agent(
         model=model,
-        tools=get_all_tools(),
+        tools=all_tools,
         subagents=subagent_specs,
-        system_prompt=GENERAL_PROMPT,
+        system_prompt=_build_general_prompt(),
         name="general",
     )
 
