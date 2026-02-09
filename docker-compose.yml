@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sunnyagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sunnyagent
+      POSTGRES_PASSWORD: sunnyagent123
+      POSTGRES_DB: sunnyagent
+    ports:
+      - "5432:5432"
+    volumes:
+      - sunnyagent-pgdata:/var/lib/postgresql/data
+    labels:
+      - "com.docker.compose.project=sunnyagent"
+      - "com.docker.compose.service=postgres"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sunnyagent -d sunnyagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sunnyagent-pgdata:

@@ -1,0 +1,252 @@
+/* Conversation List Styles */
+
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Loading State */
+.conversation-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+}
+
+.conversation-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Error State */
+.conversation-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--error);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Empty State */
+.conversation-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 8px;
+}
+
+.conversation-empty .empty-icon {
+  opacity: 0.5;
+}
+
+.conversation-empty .empty-text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Conversation Item */
+.conversation-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 44px;
+}
+
+.conversation-item:hover {
+  background: var(--bg-hover);
+}
+
+.conversation-item.selected {
+  background: var(--bg-hover);
+}
+
+.conversation-item.collapsed {
+  justify-content: center;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  width: 100%;
+}
+
+.conversation-item.collapsed:hover {
+  background: var(--bg-hover);
+}
+
+.conversation-item.collapsed.selected {
+  background: var(--user-bg);
+  color: var(--accent);
+}
+
+.conversation-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.conversation-item.selected .conversation-icon {
+  color: var(--accent);
+}
+
+/* Conversation Info */
+.conversation-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conversation-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-time {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Action Buttons Container */
+.conversation-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.conversation-item:hover .conversation-actions {
+  opacity: 1;
+}
+
+/* Common Action Button Style */
+.action-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+/* Edit Button */
+.action-btn.edit-btn:hover {
+  background: var(--user-bg);
+  color: var(--accent);
+}
+
+/* Delete Button */
+.action-btn.delete-btn:hover {
+  background: #FEF2F2;
+  color: var(--error);
+}
+
+/* Delete Confirmation */
+.delete-confirm {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.confirm-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.confirm-btn.yes {
+  color: var(--tool-task);
+}
+
+.confirm-btn.yes:hover {
+  background: #ECFDF5;
+}
+
+.confirm-btn.no {
+  color: var(--error);
+}
+
+.confirm-btn.no:hover {
+  background: #FEF2F2;
+}
+
+/* Edit Mode */
+.conversation-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.conversation-edit input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.edit-action {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.1s;
+}
+
+.edit-action.save {
+  color: var(--tool-task);
+}
+
+.edit-action.save:hover {
+  background: #ECFDF5;
+}
+
+.edit-action.cancel {
+  color: var(--text-dim);
+}
+
+.edit-action.cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}

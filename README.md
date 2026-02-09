@@ -44,7 +44,7 @@ Supervisor 分析每条消息后，要么直接回答（简单问题），要么
 - Python 3.11+
 - Node.js 18+
 - [uv](https://docs.astral.sh/uv/)（Python 包管理器）
-- Docker（用于代码执行沙箱）
+- Docker + Docker Compose（用于 PostgreSQL 和代码执行沙箱）
 - API 密钥：`ANTHROPIC_API_KEY` 和 `TAVILY_API_KEY`
 
 ## 安装
@@ -67,10 +67,38 @@ Chinook SQLite 数据库会在后端首次启动时自动下载。
 
 ## 运行
 
-打开两个终端：
+### 方式一：使用管理脚本（推荐）
 
-**终端 1 — 后端（端口 8008）：**
 ```bash
+# 一键启动所有服务（PostgreSQL + 数据库迁移 + 后端）
+./scripts/sunnyagent.sh start
+
+# 一键停止所有服务
+./scripts/sunnyagent.sh stop
+
+# 查看服务状态
+./scripts/sunnyagent.sh status
+```
+
+**完整命令列表：**
+
+| 命令 | 说明 |
+|------|------|
+| `start` | 启动所有服务（PostgreSQL + 迁移 + 后端） |
+| `stop` | 停止所有服务（清理沙箱 + 停止 PostgreSQL） |
+| `restart` | 重启所有服务 |
+| `infra` | 仅启动基础设施（PostgreSQL） |
+| `infra-stop` | 仅停止基础设施 |
+| `status` | 查看服务状态 |
+| `logs` | 查看 PostgreSQL 日志 |
+| `clean` | 清理所有容器和数据卷（危险操作） |
+
+### 方式二：手动启动
+
+**终端 1 — 启动基础设施：**
+```bash
+docker-compose up -d postgres
+uv run alembic upgrade head
 uv run uvicorn backend.main:app --reload --port 8008
 ```
 

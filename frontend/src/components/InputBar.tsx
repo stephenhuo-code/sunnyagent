@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Send, Square, Search, Database, Sparkles, Bot, X, Puzzle, Plus, Paperclip, Check, FileText } from "lucide-react";
+import { Send, Square, Search, Database, Sparkles, Bot, X, Puzzle, Plus, Paperclip, FileText } from "lucide-react";
 import type { Agent, Skill, UploadingFile, UploadedFile } from "../types";
 import { uploadFile } from "../api/client";
 
@@ -75,13 +75,13 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
       // Validate extension
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        alert(`File type not supported: ${ext}. Allowed types: ${ALLOWED_EXTENSIONS.join(", ")}`);
+        alert(`不支持的文件类型: ${ext}。支持的类型: ${ALLOWED_EXTENSIONS.join(", ")}`);
         continue;
       }
 
       // Validate size
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File too large: ${file.name}. Maximum size: 10MB`);
+        alert(`文件过大: ${file.name}。最大支持: 10MB`);
         continue;
       }
 
@@ -306,35 +306,6 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
         </div>
       )}
 
-      {/* Uploading files display */}
-      {uploadingFiles.length > 0 && (
-        <div className="uploading-files">
-          {uploadingFiles.map((item) => (
-            <div key={item.id} className={`uploading-file-item ${item.status}`}>
-              <FileText size={16} className="uploading-file-icon" />
-              <div className="uploading-file-info">
-                <span className="uploading-file-name">{item.file.name}</span>
-                <span className="uploading-file-size">{formatSize(item.file.size)}</span>
-              </div>
-              {item.status === "uploading" && (
-                <div className="uploading-progress">
-                  <div className="uploading-progress-bar" style={{ width: `${item.progress}%` }} />
-                </div>
-              )}
-              {item.status === "completed" && <Check size={14} className="uploading-status-icon success" />}
-              {item.status === "error" && <X size={14} className="uploading-status-icon error" />}
-              <button
-                className="uploading-remove-btn"
-                onClick={() => removeUploadingFile(item.id)}
-                title="Remove"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Input area with toolbar inside */}
       <div className="input-area">
         {/* Hidden file input */}
@@ -346,6 +317,33 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
           onChange={handleFileSelect}
           style={{ display: "none" }}
         />
+
+        {/* Uploaded files display inside input area */}
+        {uploadingFiles.length > 0 && (
+          <div className="input-files">
+            {uploadingFiles.map((item) => (
+              <div key={item.id} className={`input-file-card ${item.status}`}>
+                <div className="input-file-icon">
+                  <FileText size={20} />
+                </div>
+                <div className="input-file-info">
+                  <span className="input-file-name">{item.file.name.replace(/\.[^/.]+$/, "")}</span>
+                  <span className="input-file-meta">
+                    {item.file.name.slice(item.file.name.lastIndexOf(".") + 1).toUpperCase()} · {formatSize(item.file.size)}
+                    {item.status === "uploading" && ` · ${item.progress}%`}
+                  </span>
+                </div>
+                <button
+                  className="input-file-remove"
+                  onClick={() => removeUploadingFile(item.id)}
+                  title="移除"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Skill suggestions dropdown */}
         {showSkillSuggestions && filteredSkills.length > 0 && (
@@ -368,7 +366,7 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
           value={text}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={completedFiles.length > 0 ? "文件已就绪，输入消息一起发送..." : "Ask a question..."}
+          placeholder={completedFiles.length > 0 ? "文件已就绪，输入消息一起发送..." : "输入问题..."}
           rows={1}
           disabled={isStreaming}
         />
@@ -381,7 +379,7 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
               <button
                 className="toolbar-btn"
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                title="Add file"
+                title="添加文件"
               >
                 <Plus size={18} />
               </button>
@@ -393,7 +391,7 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Paperclip size={16} />
-                    <span>Add from local file</span>
+                    <span>从本地添加文件</span>
                   </button>
                 </div>
               )}
@@ -466,7 +464,7 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
           <button
             className={`send-btn ${isStreaming ? "cancel" : ""}`}
             onClick={handleSubmit}
-            title={isStreaming ? "Stop" : "Send"}
+            title={isStreaming ? "停止" : "发送"}
           >
             {isStreaming ? <Square size={18} /> : <Send size={18} />}
           </button>

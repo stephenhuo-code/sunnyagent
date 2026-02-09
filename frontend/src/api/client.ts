@@ -128,3 +128,14 @@ export async function getFileContent(fileId: string): Promise<{ content: string;
   }
   return response.json();
 }
+
+/** Fetch thread message history. */
+export async function getThreadHistory(threadId: string): Promise<{ messages: { role: string; content: string }[] }> {
+  const response = await fetch(`/api/threads/${threadId}/history`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to load thread history");
+  }
+  return response.json();
+}

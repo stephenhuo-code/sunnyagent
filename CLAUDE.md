@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research Chat — a full-stack web app (FastAPI + React) with a LangGraph supervisor that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution.
+SunnyAgent — a full-stack web app (FastAPI + React) with a LangGraph supervisor that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution. Includes user authentication, conversation management, and admin user management.
 
 ## Development Commands
+
+### Prerequisites
+```bash
+docker compose up -d          # Start PostgreSQL database
+```
 
 ### Backend (Python, managed with `uv`)
 ```bash
@@ -21,16 +26,31 @@ cd frontend && npm run dev    # Dev server on port 3008 (proxies /api → 8008)
 cd frontend && npm run build  # Production build to frontend/dist/
 ```
 
+### Database Migrations (Alembic)
+```bash
+cd infra && uv run alembic upgrade head    # Apply all migrations
+cd infra && uv run alembic downgrade -1    # Rollback last migration
+cd infra && uv run alembic revision -m "description"  # Create new migration
+```
+
 ### Type Checking
 ```bash
 uv run pyright              # Python type checking (pyrightconfig.json)
 cd frontend && npx tsc      # TypeScript checking
 ```
 
-### Required Environment Variables (.env in project root)
-- `ANTHROPIC_API_KEY` — required
-- `TAVILY_API_KEY` — required for web research
-- `OPENAI_API_KEY` — optional
+### Environment Variables (.env in project root)
+
+**Required:**
+- `ANTHROPIC_API_KEY` — Claude API key
+- `TAVILY_API_KEY` — for web research
+- `DATABASE_URL` — PostgreSQL connection string (e.g., `postgresql://sunnyagent:sunnyagent123@localhost:5432/sunnyagent`)
+
+**Optional:**
+- `OPENAI_API_KEY` — if using GPT models
+- `JWT_SECRET_KEY` — for JWT signing (auto-generated if not set)
+- `JWT_EXPIRATION` — token expiration in seconds (default: 86400 = 24h)
+- `ADMIN_USERNAME` / `ADMIN_PASSWORD` — default admin credentials on first startup
 
 ## Architecture
 
@@ -63,9 +83,24 @@ Backend streams LangGraph output as SSE events through this chain:
 3. [api/client.ts](frontend/src/api/client.ts) parses SSE via `fetch()` + `ReadableStream` (not EventSource, to support POST body)
 4. [useChat.ts](frontend/src/hooks/useChat.ts) hook consumes events and updates React state
 
-### Conversation Persistence
+### Database & Persistence
 
-Threads are persisted in `threads.db` (SQLite) via LangGraph's `AsyncSqliteSaver`. Thread IDs are 8-char hex strings from `uuid4`.
+PostgreSQL is the primary database, managed via asyncpg connection pool:
+
+- **Connection Pool** ([backend/db.py](backend/db.py)): Global asyncpg pool with 2-10 connections
+- **LangGraph Checkpoints**: Stored in PostgreSQL via `AsyncPostgresSaver`
+- **Thread IDs**: 8-char hex strings from `uuid4().hex[:8]`
+
+**Database Schema:**
+
+| Table | Description |
+|-------|-------------|
+| `users` | User accounts with roles (admin/user) and status (active/disabled) |
+| `conversations` | User conversations with thread_id mapping to LangGraph checkpoints |
+| `files` | Uploaded file metadata with user/conversation associations |
+| `langgraph_checkpoints` | LangGraph state persistence (auto-managed) |
+
+Migrations are in `infra/migrations/` and managed by Alembic.
 
 ### Container Pool & Sandbox
 
@@ -89,9 +124,60 @@ Skills provide domain-specific instructions that can be injected into agent prom
 
 When a skill is requested via `ChatRequest.skill`, the skill instructions are injected into the user message.
 
+### Authentication & Authorization
+
+JWT-based authentication with HTTP-only cookies:
+
+- **Security** ([backend/auth/security.py](backend/auth/security.py)): bcrypt password hashing, JWT token creation/validation
+- **Dependencies** ([backend/auth/dependencies.py](backend/auth/dependencies.py)): `get_current_user()` and `require_admin()` FastAPI dependencies
+- **Router** ([backend/auth/router.py](backend/auth/router.py)): Login, logout, and user management endpoints
+
+**User Roles:**
+- `admin` — Full access including user management
+- `user` — Standard user, can only access own conversations
+
+**Auth Flow:**
+1. User submits credentials to `/api/auth/login`
+2. Server validates and returns JWT in `access_token` cookie (HTTP-only, 24h expiry)
+3. All protected endpoints read cookie via `get_current_user()` dependency
+4. Admin endpoints additionally check role via `require_admin()`
+
+### Conversation Management
+
+User-scoped conversations with LangGraph thread mapping:
+
+- **Models** ([backend/conversations/models.py](backend/conversations/models.py)): Pydantic models for API
+- **Database** ([backend/conversations/database.py](backend/conversations/database.py)): CRUD operations
+- **Router** ([backend/conversations/router.py](backend/conversations/router.py)): REST endpoints
+
+Each conversation links to a LangGraph `thread_id` for message history.
+
 ### Frontend
 
-React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {MessageList (→ MessageBubble → ToolCallCard), InputBar}`. The InputBar supports `/command` syntax to route directly to a named agent (bypassing the supervisor).
+React 19 + Vite 7 + TypeScript with left-sidebar layout:
+
+**Component Tree:**
+```
+App
+├── LoginPage (unauthenticated)
+└── MainLayout (authenticated)
+    ├── Sidebar
+    │   ├── SidebarHeader (new conversation button)
+    │   ├── ConversationList (history)
+    │   └── Navigation (admin menu, logout)
+    └── ChatContainer
+        ├── MessageList → MessageBubble → ToolCallCard
+        └── InputBar
+```
+
+**Key Components:**
+- `LoginPage` — Authentication form
+- `MainLayout` — Left-sidebar layout with collapsible sidebar
+- `Sidebar` — Navigation, conversation list, user menu
+- `ConversationList` — Scrollable history with edit/delete
+- `UserManagement` — Admin-only user CRUD (Admin/)
+
+The InputBar supports `/command` syntax to route directly to a named agent (bypassing the supervisor).
 
 ## Adding a New Agent
 
@@ -107,14 +193,40 @@ React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {Mess
 
 ## API Endpoints
 
+### Authentication
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/auth/login` | POST | - | Login, returns JWT cookie |
+| `/api/auth/logout` | POST | - | Clear auth cookie |
+| `/api/auth/me` | GET | User | Get current user info |
+
+### User Management (Admin only)
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/users` | GET | Admin | List all users |
+| `/api/users` | POST | Admin | Create new user |
+| `/api/users/{id}` | DELETE | Admin | Delete user |
+| `/api/users/{id}/status` | PATCH | Admin | Enable/disable user |
+
+### Conversations
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/conversations` | GET | User | List user's conversations |
+| `/api/conversations` | POST | User | Create new conversation |
+| `/api/conversations/{id}` | GET | User | Get conversation details |
+| `/api/conversations/{id}` | PATCH | User | Update title |
+| `/api/conversations/{id}` | DELETE | User | Delete conversation |
+
 ### Chat & Threads
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/chat` | POST | Send message, returns SSE stream |
-| `/api/threads` | POST | Create new thread (returns `thread_id`) |
-| `/api/threads/{id}/history` | GET | Get thread message history |
-| `/api/agents` | GET | List registered agents |
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/chat` | POST | User | Send message, returns SSE stream |
+| `/api/threads/{id}/history` | GET | User | Get thread message history |
+| `/api/agents` | GET | - | List registered agents |
 
 **ChatRequest fields**: `thread_id`, `message`, `agent` (skip supervisor), `skill` (inject skill instructions), `file_ids` (uploaded files)
 
@@ -127,18 +239,88 @@ React 19 + Vite 7 + TypeScript. Component tree: `App → ChatContainer → {Mess
 
 ### Files
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/files/upload` | POST | Upload file (max 10MB) |
-| `/api/files/{id}/download` | GET | Download uploaded file |
-| `/api/files/{id}/content` | GET | Preview text file content |
-| `/api/files/{id}/{filename}` | GET | Download generated file (from sandbox)
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/files/upload` | POST | User | Upload file (max 10MB) |
+| `/api/files/{id}/download` | GET | User | Download uploaded file |
+| `/api/files/{id}/content` | GET | User | Preview text file content |
+| `/api/files/{id}/{filename}` | GET | User | Download generated file (from sandbox)
 
 ## Key Dependencies
 
+### Backend
 - **deepagents** (>=0.2.6) — deep agent framework with middleware
 - **langgraph** / **langchain** — agent orchestration and LLM integration
+- **asyncpg** — async PostgreSQL driver
+- **python-jose** / **bcrypt** — JWT tokens and password hashing
+- **alembic** — database migrations
 - **tavily-python** — web search API
 - **sse-starlette** — server-sent events for FastAPI
 - **docker** — container pool for sandboxed code execution
 - **pypdf** / **python-docx** / **openpyxl** / **python-pptx** — document parsing
+
+### Infrastructure
+- **PostgreSQL 15** — primary database (via docker-compose)
+- **Docker** — containerized code execution sandbox
+
+## Project Structure
+
+```
+sunnyagent/
+├── backend/
+│   ├── main.py              # FastAPI application entry
+│   ├── db.py                # PostgreSQL connection pool
+│   ├── supervisor.py        # LangGraph supervisor router
+│   ├── registry.py          # Agent registry
+│   ├── stream_handler.py    # LangGraph → SSE translation
+│   ├── auth/                # Authentication module
+│   │   ├── models.py        # User, Login, etc. Pydantic models
+│   │   ├── security.py      # Password hashing, JWT
+│   │   ├── dependencies.py  # get_current_user, require_admin
+│   │   ├── database.py      # User CRUD operations
+│   │   └── router.py        # Auth API endpoints
+│   ├── conversations/       # Conversation management
+│   │   ├── models.py        # Conversation Pydantic models
+│   │   ├── database.py      # Conversation CRUD
+│   │   └── router.py        # Conversation API endpoints
+│   ├── agents/              # Deep agents
+│   │   ├── research.py      # Web research agent
+│   │   ├── sql.py           # SQL database agent
+│   │   ├── general.py       # General orchestrator
+│   │   └── loader.py        # Package agent loader
+│   ├── tools/               # Agent tools
+│   │   ├── container_pool.py # Docker container pool
+│   │   ├── sandbox.py       # Code execution
+│   │   └── file_tools.py    # File parsing
+│   └── skills/              # Skill system
+│       ├── registry.py      # Skill registry
+│       └── loader.py        # Skill loader
+├── frontend/src/
+│   ├── api/                 # API clients
+│   │   ├── client.ts        # SSE chat client
+│   │   ├── auth.ts          # Auth API
+│   │   ├── conversations.ts # Conversations API
+│   │   └── users.ts         # User management API
+│   ├── hooks/               # React hooks
+│   │   ├── useChat.ts       # Chat state management
+│   │   ├── useAuth.ts       # Auth context
+│   │   └── useConversations.ts
+│   └── components/
+│       ├── Auth/            # Login page
+│       ├── Layout/          # MainLayout, Sidebar
+│       ├── Conversations/   # Conversation list/item
+│       ├── Admin/           # User management (admin)
+│       ├── ChatContainer.tsx
+│       ├── MessageList.tsx
+│       ├── InputBar.tsx
+│       └── ToolCallCard.tsx
+├── infra/
+│   ├── alembic.ini          # Alembic config
+│   └── migrations/          # Database migrations
+│       └── versions/
+│           ├── 001_create_users_table.py
+│           └── 002_create_conversations_table.py
+├── docker-compose.yml       # PostgreSQL service
+├── packages/                # Package agents (AGENTS.md)
+└── skills/                  # Global skills (SKILL.md)
+```

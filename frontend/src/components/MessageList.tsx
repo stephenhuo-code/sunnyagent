@@ -30,12 +30,12 @@ export default function MessageList({ messages, isStreaming, onFileClick }: Mess
       <div className="message-list empty" ref={containerRef}>
         <div className="welcome">
           <h2>Sunny Agents</h2>
-          <p>Ask any research question and the agent will search the web, analyze sources, and write a comprehensive report.</p>
+          <p>提出任何研究问题，智能体将搜索网络、分析来源并撰写综合报告。</p>
           <div className="examples">
-            <span>Try:</span>
-            <em>"Compare React, Vue, and Svelte for building modern web apps"</em>
-            <em>"What are the latest advances in quantum computing?"</em>
-            <em>"Research the impact of AI on software engineering jobs"</em>
+            <span>试试:</span>
+            <em>"比较 React、Vue 和 Svelte 构建现代 Web 应用"</em>
+            <em>"量子计算的最新进展是什么？"</em>
+            <em>"研究 AI 对软件工程岗位的影响"</em>
           </div>
         </div>
       </div>

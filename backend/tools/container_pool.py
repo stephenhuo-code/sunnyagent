@@ -170,8 +170,8 @@ class ContainerPool:
             self._all_containers.discard(container_id)
 
     async def cleanup_all_project_containers(self) -> None:
-        """清理所有带 sunnyagent 标签的容器"""
-        logger.info("Cleaning up all sunnyagent containers...")
+        """清理所有 sandbox 容器（保留 postgres 等其他服务）"""
+        logger.info("Cleaning up all sunnyagent sandbox containers...")
         loop = asyncio.get_event_loop()
 
         try:
@@ -179,7 +179,12 @@ class ContainerPool:
                 None,
                 lambda: self.client.containers.list(
                     all=True,
-                    filters={"label": f"com.docker.compose.project={PROJECT_NAME}"}
+                    filters={
+                        "label": [
+                            f"com.docker.compose.project={PROJECT_NAME}",
+                            "com.docker.compose.service=sandbox",
+                        ]
+                    }
                 )
             )
 
@@ -247,12 +252,17 @@ async def shutdown_pool() -> None:
 
 
 async def cleanup_all_sunnyagent_containers() -> None:
-    """独立清理函数，可在池未初始化时调用"""
+    """独立清理函数，可在池未初始化时调用（只清理 sandbox 容器）"""
     client = docker.from_env()
     try:
         containers = client.containers.list(
             all=True,
-            filters={"label": f"com.docker.compose.project={PROJECT_NAME}"}
+            filters={
+                "label": [
+                    f"com.docker.compose.project={PROJECT_NAME}",
+                    "com.docker.compose.service=sandbox",
+                ]
+            }
         )
         for container in containers:
             try:
