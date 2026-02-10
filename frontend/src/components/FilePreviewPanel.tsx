@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X, Download, FileText, File, Loader } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Download, FileText, File, Loader, ChevronDown } from "lucide-react";
 import type { FileAttachment } from "../types";
 import { getFileContent } from "../api/client";
 
@@ -19,6 +19,8 @@ export default function FilePreviewPanel({ file, onClose }: FilePreviewPanelProp
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!file) {
@@ -41,6 +43,17 @@ export default function FilePreviewPanel({ file, onClose }: FilePreviewPanelProp
       .finally(() => setLoading(false));
   }, [file]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   if (!file) return null;
 
   return (
@@ -48,6 +61,30 @@ export default function FilePreviewPanel({ file, onClose }: FilePreviewPanelProp
       <div className="preview-header">
         <FileText size={18} className="preview-header-icon" />
         <span className="preview-filename">{file.filename}</span>
+
+        {/* Dropdown menu */}
+        <div className="preview-dropdown" ref={dropdownRef}>
+          <button
+            className="preview-dropdown-btn"
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+          >
+            <ChevronDown size={16} />
+          </button>
+          {dropdownOpen && (
+            <div className="preview-dropdown-menu">
+              <a
+                href={file.download_url}
+                download={file.filename}
+                className="preview-dropdown-item"
+                onClick={() => setDropdownOpen(false)}
+              >
+                <Download size={16} />
+                Download
+              </a>
+            </div>
+          )}
+        </div>
+
         <button className="preview-close-btn" onClick={onClose}>
           <X size={18} />
         </button>
@@ -57,7 +94,7 @@ export default function FilePreviewPanel({ file, onClose }: FilePreviewPanelProp
         {loading ? (
           <div className="preview-loading">
             <Loader size={24} className="spinning" />
-            <span>Loading...</span>
+            <span>加载中...</span>
           </div>
         ) : error ? (
           <div className="preview-error">
@@ -68,20 +105,9 @@ export default function FilePreviewPanel({ file, onClose }: FilePreviewPanelProp
         ) : (
           <div className="preview-unsupported">
             <File size={48} />
-            <p>Preview not available for this file type</p>
+            <p>此文件类型不支持预览</p>
           </div>
         )}
-      </div>
-
-      <div className="preview-footer">
-        <a
-          href={file.download_url}
-          download={file.filename}
-          className="preview-download-btn"
-        >
-          <Download size={16} />
-          Download
-        </a>
       </div>
     </div>
   );

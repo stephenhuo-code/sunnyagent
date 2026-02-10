@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { createThread, streamChat } from "../api/client";
+import { createThread, streamChat, getThreadHistory } from "../api/client";
 import type { Message, ThinkingState, ToolCall, UploadedFile } from "../types";
 
 let msgCounter = 0;
@@ -21,10 +21,14 @@ function parseSkillCommand(text: string): { skill: string | null; message: strin
   return { skill: match[1].toLowerCase(), message: match[2] || trimmed };
 }
 
-export function useChat() {
+interface UseChatOptions {
+  initialThreadId?: string | null;
+}
+
+export function useChat(options: UseChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(options.initialThreadId ?? null);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -252,5 +256,24 @@ export function useChat() {
     setThreadId(null);
   }, []);
 
-  return { messages, isStreaming, threadId, sendMessage, cancel, newThread };
+  const loadThread = useCallback(async (newThreadId: string) => {
+    setThreadId(newThreadId);
+    setMessages([]);
+
+    try {
+      const history = await getThreadHistory(newThreadId);
+      if (history.messages && history.messages.length > 0) {
+        const loadedMessages: Message[] = history.messages.map((msg: { role: string; content: string }, index: number) => ({
+          id: `history-${index}`,
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+        }));
+        setMessages(loadedMessages);
+      }
+    } catch (err) {
+      console.error("Failed to load thread history:", err);
+    }
+  }, []);
+
+  return { messages, isStreaming, threadId, sendMessage, cancel, newThread, loadThread };
 }

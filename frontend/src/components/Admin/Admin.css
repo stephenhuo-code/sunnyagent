@@ -1,0 +1,464 @@
+/* Admin Panel Styles */
+
+/* Loading State */
+.admin-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: var(--text-muted);
+}
+
+.admin-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+/* User Management Container */
+.user-management {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+  overflow: hidden;
+}
+
+/* Admin Header */
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-shrink: 0;
+}
+
+.admin-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+}
+
+.admin-title h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Admin Error */
+.admin-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.admin-error span {
+  flex: 1;
+}
+
+.admin-error button {
+  background: transparent;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.admin-error button:hover {
+  background: #FEE2E2;
+}
+
+/* Buttons */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* User Table Container */
+.user-table-container {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* User Table */
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.user-table th,
+.user-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-table th {
+  background: var(--bg-surface);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+}
+
+.user-table tr:last-child td {
+  border-bottom: none;
+}
+
+.user-table tr.disabled {
+  opacity: 0.6;
+}
+
+/* User Cell */
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-icon {
+  color: var(--text-muted);
+}
+
+.role-icon.admin {
+  color: var(--accent);
+}
+
+.username {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.you-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  background: var(--user-bg);
+  color: var(--accent);
+  border-radius: 4px;
+}
+
+/* Role Badge */
+.role-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.role-badge.admin {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+.role-badge.user {
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.active {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.status-badge.disabled {
+  background: #FEE2E2;
+  color: #B91C1C;
+}
+
+/* Date Cell */
+.date-cell {
+  color: var(--text-muted);
+}
+
+/* Action Buttons */
+.no-actions {
+  color: var(--text-dim);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  color: var(--text-muted);
+}
+
+.action-btn:hover {
+  background: var(--bg-hover);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn.disable:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: #FEF2F2;
+}
+
+.action-btn.enable:hover {
+  border-color: var(--tool-task);
+  color: var(--tool-task);
+  background: #ECFDF5;
+}
+
+.action-btn.delete:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: #FEF2F2;
+}
+
+.delete-confirm-inline {
+  display: flex;
+  gap: 4px;
+}
+
+.action-btn.confirm-delete {
+  border-color: var(--error);
+  color: white;
+  background: var(--error);
+}
+
+.action-btn.confirm-delete:hover {
+  background: #B91C1C;
+}
+
+.action-btn.cancel-delete {
+  border-color: var(--text-dim);
+}
+
+.action-btn.cancel-delete:hover {
+  background: var(--bg-hover);
+}
+
+/* User Form Modal */
+.user-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.user-form-modal {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+.user-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-form-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.user-form-modal form {
+  padding: 24px;
+}
+
+/* Form Fields */
+.form-field {
+  margin-bottom: 20px;
+}
+
+.form-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.form-field input,
+.form-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.form-field input:disabled,
+.form-field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-input-wrapper {
+  position: relative;
+}
+
+.password-input-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.password-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Form Error */
+.form-error {
+  padding: 10px 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}

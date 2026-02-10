@@ -20,9 +20,9 @@ const TOOL_CONFIG: Record<
   string,
   { icon: typeof Search; label: string; color: string }
 > = {
-  tavily_search: { icon: Search, label: "Web Search", color: "var(--tool-search)" },
-  think_tool: { icon: Lightbulb, label: "Thinking", color: "var(--tool-think)" },
-  task: { icon: GitBranch, label: "Sub-agent", color: "var(--tool-task)" },
+  tavily_search: { icon: Search, label: "网络搜索", color: "var(--tool-search)" },
+  think_tool: { icon: Lightbulb, label: "思考", color: "var(--tool-think)" },
+  task: { icon: GitBranch, label: "子智能体", color: "var(--tool-task)" },
 };
 
 function getToolDisplay(name: string) {

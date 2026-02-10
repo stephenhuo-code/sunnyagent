@@ -5,9 +5,12 @@ import type { Agent, Skill, FileAttachment } from "../types";
 import MessageList from "./MessageList";
 import InputBar from "./InputBar";
 import FilePreviewPanel from "./FilePreviewPanel";
-import { RotateCcw } from "lucide-react";
 
-export default function ChatContainer() {
+interface ChatContainerProps {
+  initialThreadId?: string | null;
+}
+
+export default function ChatContainer({ initialThreadId }: ChatContainerProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
@@ -17,8 +20,15 @@ export default function ChatContainer() {
     getSkills().then(setSkills).catch(() => {});
   }, []);
 
-  const { messages, isStreaming, threadId, sendMessage, cancel, newThread } =
+  const { messages, isStreaming, threadId, sendMessage, cancel, loadThread } =
     useChat();
+
+  // Load thread history if initialThreadId is provided
+  useEffect(() => {
+    if (initialThreadId) {
+      loadThread(initialThreadId);
+    }
+  }, [initialThreadId, loadThread]);
 
   return (
     <div className={`chat-layout ${previewFile ? "with-preview" : ""}`}>
@@ -26,12 +36,8 @@ export default function ChatContainer() {
         <header className="chat-header">
           <h1>Sunny Agents</h1>
           {threadId && (
-            <span className="thread-id">Thread: {threadId}</span>
+            <span className="thread-id">线程: {threadId}</span>
           )}
-          <button className="new-thread-btn" onClick={newThread} title="New thread">
-            <RotateCcw size={16} />
-            New
-          </button>
         </header>
         <MessageList
           messages={messages}

@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 backend/__init__.py
+backend/db.py
 backend/main.py
 backend/models.py
 backend/prompts.py
