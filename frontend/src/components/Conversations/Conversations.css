@@ -69,7 +69,14 @@
 }
 
 .conversation-item.selected {
-  background: var(--bg-hover);
+  background: var(--user-bg);
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;  /* 12px - 3px border */
+}
+
+.conversation-item.selected .conversation-title {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .conversation-item.collapsed {

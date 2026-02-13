@@ -23,14 +23,22 @@ export interface UseConversationsResult {
   update: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   select: (id: string | null) => void;
+  clearSelection: () => void;
 }
+
+const STORAGE_KEY = "selected-conversation-id";
 
 export function useConversations(): UseConversationsResult {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(STORAGE_KEY);
+    }
+    return null;
+  });
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -59,6 +67,7 @@ export function useConversations(): UseConversationsResult {
     ]);
     setTotal((prev) => prev + 1);
     setSelectedId(conversation.id);
+    localStorage.setItem(STORAGE_KEY, conversation.id);
     return conversation;
   }, []);
 
@@ -75,11 +84,22 @@ export function useConversations(): UseConversationsResult {
     setTotal((prev) => prev - 1);
     if (selectedId === id) {
       setSelectedId(null);
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, [selectedId]);
 
   const select = useCallback((id: string | null) => {
     setSelectedId(id);
+    if (id) {
+      localStorage.setItem(STORAGE_KEY, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedId(null);
+    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   // Load conversations on mount
@@ -98,5 +118,6 @@ export function useConversations(): UseConversationsResult {
     update,
     remove,
     select,
+    clearSelection,
   };
 }

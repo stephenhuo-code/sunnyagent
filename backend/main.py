@@ -278,7 +278,8 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     async def event_generator():
         try:
             async for event in stream_agent_response(
-                target, request.thread_id, message
+                target, request.thread_id, message,
+                user_id=str(current_user.id),
             ):
                 yield event
         except Exception:

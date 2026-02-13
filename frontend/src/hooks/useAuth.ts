@@ -72,6 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await apiLogout();
     setUser(null);
+    // Clear selected conversation to prevent cross-user data leakage
+    localStorage.removeItem("selected-conversation-id");
   }, []);
 
   const value: AuthContextType = {

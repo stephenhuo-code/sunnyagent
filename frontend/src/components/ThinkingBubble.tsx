@@ -74,12 +74,15 @@ export default function ThinkingBubble({ thinking }: ThinkingBubbleProps) {
           ))}
       </div>
       {expanded && thinking.steps.length > 0 && (
-        <div className="thinking-steps">
-          {thinking.steps.map((step, i) => (
-            <div key={i} className="thinking-step">
-              {step}
-            </div>
-          ))}
+        <div className="thinking-content">
+          {/* Display thinking steps only - response content shows in Layer 3 */}
+          <div className="thinking-steps">
+            {thinking.steps.map((step, i) => (
+              <div key={i} className="thinking-step">
+                {step}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

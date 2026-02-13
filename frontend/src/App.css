@@ -297,6 +297,33 @@ body {
   font-weight: 600;
 }
 
+/* Markdown table styles */
+.message-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+
+.message-content thead {
+  background: var(--bg-surface);
+}
+
+.message-content th,
+.message-content td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.message-content th {
+  font-weight: 600;
+}
+
+.message-content tbody tr:hover {
+  background: var(--bg-hover);
+}
+
 /* ===== Tool Call Card ===== */
 .tool-call-card {
   background: var(--bg-surface);
@@ -456,10 +483,7 @@ body {
 }
 
 .thinking-steps {
-  border-top: 1px solid var(--border);
   padding: 8px 12px;
-  max-height: 300px;
-  overflow-y: auto;
 }
 
 .thinking-step {
@@ -472,6 +496,49 @@ body {
 
 .thinking-step:last-child {
   border-bottom: none;
+}
+
+.thinking-content {
+  border-top: 1px solid var(--border);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.thinking-text {
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.thinking-text p {
+  margin-bottom: 8px;
+}
+
+.thinking-text p:last-child {
+  margin-bottom: 0;
+}
+
+.thinking-text code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.thinking-text pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.thinking-text pre code {
+  background: none;
+  padding: 0;
 }
 
 /* ===== Streaming Indicator ===== */
@@ -1180,4 +1247,152 @@ body {
   height: 100%;
   color: var(--text-muted);
   font-size: 18px;
+}
+
+/* ===== Task List (Layer 2) ===== */
+.task-list {
+  margin-bottom: 12px;
+}
+
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Todo item (from planning mode) */
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.task-item.completed {
+  opacity: 0.7;
+}
+
+.task-item.in_progress {
+  border-left: 3px solid var(--accent);
+}
+
+.task-icon {
+  flex-shrink: 0;
+}
+
+.task-icon.completed {
+  color: var(--tool-task);
+}
+
+.task-icon.in-progress {
+  color: var(--accent);
+}
+
+.task-icon.pending {
+  color: var(--text-dim);
+}
+
+.task-icon.error {
+  color: var(--error);
+}
+
+.task-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.task-content {
+  flex: 1;
+  color: var(--text);
+}
+
+/* Spawned task (from agent mode) */
+.spawned-task {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.spawned-task.running {
+  border-left: 3px solid var(--accent);
+}
+
+.spawned-task.success {
+  border-left: 3px solid var(--tool-task);
+}
+
+.spawned-task.error {
+  border-left: 3px solid var(--error);
+}
+
+.spawned-task-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.spawned-task-header .expand-icon {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.task-type {
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--user-bg);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.task-description {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-duration {
+  color: var(--text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.spawned-task-tools {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  animation: expandIn 0.2s ease-out;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    max-height: 0;
+    padding: 0 12px;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+    padding: 8px 12px;
+  }
+}
+
+/* Expand icon rotation */
+.spawned-task-header .expand-icon {
+  transition: transform 0.2s ease;
+}
+
+.spawned-task-header:hover .expand-icon {
+  color: var(--accent);
 }

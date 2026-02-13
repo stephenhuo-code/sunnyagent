@@ -3,13 +3,19 @@
 """
 import asyncio
 import io
+import logging
+import mimetypes
 import os
 import tarfile
 import uuid
+from typing import Annotated
 
-from langchain_core.tools import tool
+from langchain_core.tools import tool, InjectedToolArg
+from langgraph.prebuilt import ToolRuntime
 
 from .container_pool import get_pool
+
+logger = logging.getLogger(__name__)
 
 # 临时文件存储目录
 TEMP_DIR = "/tmp/sunnyagent_files"
@@ -70,7 +76,11 @@ async def execute_python(code: str) -> str:
 
 
 @tool
-async def execute_python_with_file(code: str, output_filename: str) -> str:
+async def execute_python_with_file(
+    code: str,
+    output_filename: str,
+    tool_runtime: Annotated[ToolRuntime | None, InjectedToolArg] = None,
+) -> str:
     """
     执行 Python 代码并生成可下载的文件。
 
@@ -129,6 +139,32 @@ async def execute_python_with_file(code: str, output_filename: str) -> str:
         local_path = os.path.join(host_output_dir, output_filename)
         if not os.path.exists(local_path):
             return f"❌ 文件 {output_filename} 提取失败"
+
+        # 从 tool_runtime 的 config 中获取 user_id
+        user_id = None
+        if tool_runtime and tool_runtime.config:
+            user_id = tool_runtime.config.get("configurable", {}).get("user_id")
+
+        # 注册文件到数据库（需要 user_id）
+        if user_id:
+            try:
+                from uuid import UUID
+                from backend.files import database as files_db
+
+                content_type, _ = mimetypes.guess_type(output_filename)
+                file_size = os.path.getsize(local_path)
+                await files_db.create_file(
+                    user_id=UUID(user_id),
+                    file_id=file_id,
+                    original_name=output_filename,
+                    content_type=content_type or "application/octet-stream",
+                    size_bytes=file_size,
+                    storage_path=local_path,
+                )
+                logger.info(f"Registered generated file: {file_id}/{output_filename}")
+            except Exception as e:
+                # 注册失败不影响下载链接返回，但记录日志
+                logger.warning(f"Failed to register generated file: {e}")
 
         download_url = f"/api/files/{file_id}/{output_filename}"
         return f"✅ 文件已生成\n\n[📥 点击下载 {output_filename}]({download_url})"
