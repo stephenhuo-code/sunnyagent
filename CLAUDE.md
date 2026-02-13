@@ -304,3 +304,10 @@ See `docs/ai-dev-best-practices.md` for full AI-assisted development guidelines.
 3. **Generate code**: Step by step, review each step
 4. **Before PR**: Run `uv run pyright` and `uv run pytest`
 5. **Code review**: Check dependency direction and interface compliance
+
+## Active Technologies
+- Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, LangGraph, DeepAgents, React 19, Vite 7 (003-task-display)
+- PostgreSQL (via asyncpg + LangGraph AsyncPostgresSaver) (003-task-display)
+
+## Recent Changes
+- 003-task-display: Added Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, LangGraph, DeepAgents, React 19, Vite 7

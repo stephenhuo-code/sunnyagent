@@ -42,6 +42,7 @@ export default function ChatContainer({ initialThreadId }: ChatContainerProps) {
         <MessageList
           messages={messages}
           isStreaming={isStreaming}
+          scrollKey={initialThreadId ?? undefined}
           onFileClick={setPreviewFile}
         />
         <InputBar

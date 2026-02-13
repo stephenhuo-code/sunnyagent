@@ -11,20 +11,49 @@ export interface Skill {
   description: string;
 }
 
+/** Todo item from DeepAgents TodoListMiddleware */
+export interface Todo {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+/** Sub-agent task spawned via SubAgentMiddleware */
+export interface SpawnedTask {
+  task_id: string;
+  subagent_type: string;
+  description: string;
+  status: "running" | "success" | "error";
+  duration_ms?: number;
+  toolCalls: ToolCall[];
+}
+
+/** Individual thinking step with type categorization */
+export interface ThinkingStep {
+  type?: "planning" | "replanning" | "routing";
+  content: string;
+  timestamp: number;
+}
+
+/** Display scenario type for three-layer structure */
+export type DisplayScenario = "quick" | "agent" | "planning";
+
 /** SSE event types from the backend */
 export type SSEEvent =
   | { event: "text_delta"; data: { text: string } }
   | {
       event: "tool_call_start";
-      data: { id: string; name: string; args: Record<string, unknown> };
+      data: { id: string; task_id?: string; name: string; args: Record<string, unknown> };
     }
   | {
       event: "tool_call_result";
-      data: { id: string; name: string; status: string; output: string };
+      data: { id: string; task_id?: string; name: string; status: string; output: string };
     }
-  | { event: "thinking"; data: { content: string } }
+  | { event: "thinking"; data: { type?: "planning" | "replanning" | "routing"; content: string } }
   | { event: "error"; data: { message: string } }
-  | { event: "done"; data: Record<string, never> };
+  | { event: "done"; data: Record<string, never> }
+  | { event: "todos_updated"; data: { todos: Todo[]; timestamp: string } }
+  | { event: "task_spawned"; data: { task_id: string; subagent_type: string; description: string } }
+  | { event: "task_completed"; data: { task_id: string; duration_ms: number; status: "success" | "error" } };
 
 /** A tool call with its current status */
 export interface ToolCall {
@@ -37,7 +66,7 @@ export interface ToolCall {
 
 /** Thinking bubble state for agent reasoning steps */
 export interface ThinkingState {
-  steps: string[];
+  steps: string[];           // Thinking steps from backend thinking events
   isThinking: boolean;
   startTime: number;
   durationSeconds: number;
@@ -80,4 +109,10 @@ export interface Message {
   toolCalls?: ToolCall[];
   thinking?: ThinkingState;
   files?: FileAttachment[];
+  /** Display scenario for three-layer structure */
+  displayScenario?: DisplayScenario;
+  /** Todo list from autonomous planning mode */
+  todos?: Todo[];
+  /** Spawned sub-agent tasks */
+  spawnedTasks?: SpawnedTask[];
 }

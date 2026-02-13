@@ -5,12 +5,25 @@ import type { Message, FileAttachment } from "../types";
 interface MessageListProps {
   messages: Message[];
   isStreaming: boolean;
+  scrollKey?: string | number;
   onFileClick?: (file: FileAttachment) => void;
 }
 
-export default function MessageList({ messages, isStreaming, onFileClick }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, scrollKey, onFileClick }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // If scrollKey is provided on mount, we need to scroll when messages load
+  const needsScroll = useRef(!!scrollKey);
+
+  // Scroll when messages are loaded and we need to scroll
+  useEffect(() => {
+    if (needsScroll.current && messages.length > 0) {
+      needsScroll.current = false;
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 0);
+    }
+  }, [messages]);
 
   // Auto-scroll to bottom when new content arrives (only if near bottom)
   useEffect(() => {

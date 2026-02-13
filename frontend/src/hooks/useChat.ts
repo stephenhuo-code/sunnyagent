@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { createThread, streamChat, getThreadHistory } from "../api/client";
-import type { Message, ThinkingState, ToolCall, UploadedFile } from "../types";
+import type { Message, ThinkingState, ToolCall, UploadedFile, DisplayScenario, SpawnedTask } from "../types";
 
 let msgCounter = 0;
 function nextId() {
@@ -78,6 +78,10 @@ export function useChat(options: UseChatOptions = {}) {
         content: "",
         toolCalls: [],
         thinking: thinkingStart,
+        // Start with "agent" scenario to show ThinkingBubble immediately
+        displayScenario: "agent" as DisplayScenario,
+        spawnedTasks: [],
+        todos: [],
       };
       setMessages((prev) => [...prev, assistantMsg]);
       setIsStreaming(true);
@@ -100,30 +104,19 @@ export function useChat(options: UseChatOptions = {}) {
           console.log(`[CHAT_EVENT] event=${event.event}`, event.data);
           switch (event.event) {
             case "text_delta":
+              // Accumulate text_delta only in message.content (Layer 3)
+              // ThinkingBubble only shows thinking steps, not the actual response
               setMessages((prev) =>
-                prev.map((m) => {
-                  if (m.id !== assistantId) return m;
-                  const updatedThinking =
-                    m.thinking?.isThinking
-                      ? {
-                          ...m.thinking,
-                          isThinking: false,
-                          durationSeconds: Math.round(
-                            (Date.now() - m.thinking.startTime) / 1000,
-                          ),
-                        }
-                      : m.thinking;
-                  return {
-                    ...m,
-                    content: m.content + event.data.text,
-                    thinking: updatedThinking,
-                  };
-                }),
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + event.data.text }
+                    : m
+                ),
               );
               break;
 
             case "tool_call_start": {
-              console.log(`[TOOL_START] id=${event.data.id}, name=${event.data.name}`, event.data.args);
+              console.log(`[TOOL_START] id=${event.data.id}, name=${event.data.name}, task_id=${event.data.task_id}`, event.data.args);
               const tc: ToolCall = {
                 id: event.data.id,
                 name: event.data.name,
@@ -131,39 +124,65 @@ export function useChat(options: UseChatOptions = {}) {
                 status: "running",
               };
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, toolCalls: [...(m.toolCalls ?? []), tc] }
-                    : m,
-                ),
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  // If tool has a task_id, associate it with the spawned task
+                  const taskId = event.data.task_id;
+                  if (taskId && m.spawnedTasks) {
+                    return {
+                      ...m,
+                      spawnedTasks: m.spawnedTasks.map((task) =>
+                        task.task_id === taskId
+                          ? { ...task, toolCalls: [...task.toolCalls, tc] }
+                          : task
+                      ),
+                    };
+                  }
+                  // Otherwise add to top-level toolCalls
+                  return { ...m, toolCalls: [...(m.toolCalls ?? []), tc] };
+                }),
               );
               break;
             }
 
-            case "tool_call_result":
-              console.log(`[TOOL_RESULT] id=${event.data.id}, status=${event.data.status}`, event.data.output?.slice(0, 200));
+            case "tool_call_result": {
+              console.log(`[TOOL_RESULT] id=${event.data.id}, status=${event.data.status}, task_id=${event.data.task_id}`, event.data.output?.slice(0, 200));
+              const resultStatus = event.data.status === "success" ? "done" as const : "error" as const;
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        toolCalls: (m.toolCalls ?? []).map((tc) =>
-                          tc.id === event.data.id
-                            ? {
-                                ...tc,
-                                status:
-                                  event.data.status === "success"
-                                    ? ("done" as const)
-                                    : ("error" as const),
-                                output: event.data.output,
-                              }
-                            : tc,
-                        ),
-                      }
-                    : m,
-                ),
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  // If tool has a task_id, update in spawned task
+                  const taskId = event.data.task_id;
+                  if (taskId && m.spawnedTasks) {
+                    return {
+                      ...m,
+                      spawnedTasks: m.spawnedTasks.map((task) =>
+                        task.task_id === taskId
+                          ? {
+                              ...task,
+                              toolCalls: task.toolCalls.map((tc) =>
+                                tc.id === event.data.id
+                                  ? { ...tc, status: resultStatus, output: event.data.output }
+                                  : tc
+                              ),
+                            }
+                          : task
+                      ),
+                    };
+                  }
+                  // Otherwise update in top-level toolCalls
+                  return {
+                    ...m,
+                    toolCalls: (m.toolCalls ?? []).map((tc) =>
+                      tc.id === event.data.id
+                        ? { ...tc, status: resultStatus, output: event.data.output }
+                        : tc
+                    ),
+                  };
+                }),
               );
               break;
+            }
 
             case "thinking":
               setMessages((prev) =>
@@ -171,6 +190,13 @@ export function useChat(options: UseChatOptions = {}) {
                   m.id === assistantId
                     ? {
                         ...m,
+                        // Upgrade scenario: any thinking event upgrades quick → agent
+                        // planning/replanning explicitly upgrades to planning
+                        displayScenario: event.data.type === "planning" || event.data.type === "replanning"
+                          ? "planning" as DisplayScenario
+                          : m.displayScenario === "quick"
+                            ? "agent" as DisplayScenario
+                            : m.displayScenario,
                         thinking: {
                           ...(m.thinking ?? {
                             steps: [],
@@ -188,6 +214,70 @@ export function useChat(options: UseChatOptions = {}) {
                 ),
               );
               break;
+
+            case "todos_updated": {
+              console.log(`[TODOS_UPDATED] count=${event.data.todos.length}`, event.data.todos);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        // Upgrade to planning scenario when we receive todos
+                        displayScenario: "planning" as DisplayScenario,
+                        todos: event.data.todos,
+                      }
+                    : m,
+                ),
+              );
+              break;
+            }
+
+            case "task_spawned": {
+              console.log(`[TASK_SPAWNED] task_id=${event.data.task_id}, type=${event.data.subagent_type}`, event.data.description);
+              const newTask: SpawnedTask = {
+                task_id: event.data.task_id,
+                subagent_type: event.data.subagent_type,
+                description: event.data.description,
+                status: "running",
+                toolCalls: [],
+              };
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        // Upgrade to agent scenario when we see task_spawned
+                        displayScenario: m.displayScenario === "planning" ? "planning" : "agent" as DisplayScenario,
+                        spawnedTasks: [...(m.spawnedTasks ?? []), newTask],
+                      }
+                    : m,
+                ),
+              );
+              break;
+            }
+
+            case "task_completed": {
+              console.log(`[TASK_COMPLETED] task_id=${event.data.task_id}, status=${event.data.status}, duration=${event.data.duration_ms}ms`);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        spawnedTasks: (m.spawnedTasks ?? []).map((task) =>
+                          task.task_id === event.data.task_id
+                            ? {
+                                ...task,
+                                status: event.data.status,
+                                duration_ms: event.data.duration_ms,
+                              }
+                            : task
+                        ),
+                      }
+                    : m,
+                ),
+              );
+              break;
+            }
 
             case "error":
               setMessages((prev) =>
@@ -207,6 +297,10 @@ export function useChat(options: UseChatOptions = {}) {
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.id !== assistantId) return m;
+
+                  // No longer degrade to quick - always keep agent/planning scenario
+                  // ThinkingBubble shows streaming content and collapses on completion
+
                   if (m.thinking?.isThinking) {
                     return {
                       ...m,

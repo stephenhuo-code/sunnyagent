@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { useConversations } from "./hooks/useConversations";
 import { LoginPage } from "./components/Auth/LoginPage";
@@ -18,6 +18,38 @@ function AppContent() {
   const [chatKey, setChatKey] = useState(0);
 
   const conversations = useConversations();
+
+  // Restore selected conversation on page load
+  useEffect(() => {
+    const restoreSelection = async () => {
+      // If already have a threadId set or still loading, skip
+      if (currentThreadId || conversations.isLoading) return;
+
+      // Read saved ID from localStorage
+      const savedId = localStorage.getItem("selected-conversation-id");
+      if (!savedId) return;
+
+      // Verify the conversation exists in current list
+      const exists = conversations.conversations.find((c) => c.id === savedId);
+      if (!exists) {
+        localStorage.removeItem("selected-conversation-id");
+        return;
+      }
+
+      // Restore selection and load conversation
+      try {
+        const conv = await getConversation(savedId);
+        conversations.select(savedId);
+        setCurrentThreadId(conv.thread_id);
+        setChatKey((prev) => prev + 1);
+      } catch (error) {
+        console.error("Failed to restore conversation:", error);
+        localStorage.removeItem("selected-conversation-id");
+      }
+    };
+
+    restoreSelection();
+  }, [conversations.isLoading, conversations.conversations]);
 
   const handleNewConversation = useCallback(async () => {
     // Create a new conversation and select it
