@@ -11,12 +11,12 @@ correct specialist subgraph node.
 """
 
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Checkpointer, Command
 
+from backend.llm import get_model
 from backend.registry import AGENT_REGISTRY, get_agent_descriptions
 
 ROUTER_PROMPT_TEMPLATE = """\
@@ -54,7 +54,7 @@ def build_supervisor(checkpointer: Checkpointer | None = None):
     # --- trigger agent registration ---
     import backend.agents  # noqa: F401
 
-    model = init_chat_model("anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
+    model = get_model("supervisor")
 
     router_prompt = ROUTER_PROMPT_TEMPLATE.format(
         agent_descriptions=get_agent_descriptions()

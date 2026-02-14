@@ -41,13 +41,18 @@ cd frontend && npx tsc      # TypeScript checking
 
 ### Environment Variables (.env in project root)
 
-**Required:**
-- `ANTHROPIC_API_KEY` — Claude API key
+**LLM Provider Configuration:**
+- `LLM_PROVIDER` — Select LLM provider: `anthropic` (default), `openai`, `deepseek`, or `deepseek_gateway`
+- `ANTHROPIC_API_KEY` — Required if `LLM_PROVIDER=anthropic`
+- `OPENAI_API_KEY` — Required if `LLM_PROVIDER=openai`
+- `DEEPSEEK_API_KEY` — Required if `LLM_PROVIDER=deepseek` (Native, api.deepseek.com)
+- `DEEPSEEK_GATEWAY_API_KEY` — Required if `LLM_PROVIDER=deepseek_gateway` (Gateway, volceapi.com)
+
+**Other Required:**
 - `TAVILY_API_KEY` — for web research
 - `DATABASE_URL` — PostgreSQL connection string (e.g., `postgresql://sunnyagent:sunnyagent123@localhost:5432/sunnyagent`)
 
 **Optional:**
-- `OPENAI_API_KEY` — if using GPT models
 - `JWT_SECRET_KEY` — for JWT signing (auto-generated if not set)
 - `JWT_EXPIRATION` — token expiration in seconds (default: 86400 = 24h)
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — default admin credentials on first startup
@@ -78,6 +83,7 @@ User → Supervisor (LLM router)
 - `backend/registry.py` — Agent 自注册中心
 - `backend/stream_handler.py` — LangGraph → SSE 转换
 - `backend/db.py` — PostgreSQL 连接池
+- `backend/llm/` — LLM 提供商配置和工厂函数
 
 ## Adding a New Agent
 
@@ -306,8 +312,10 @@ See `docs/ai-dev-best-practices.md` for full AI-assisted development guidelines.
 5. **Code review**: Check dependency direction and interface compliance
 
 ## Active Technologies
-- Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, LangGraph, DeepAgents, React 19, Vite 7 (003-task-display)
-- PostgreSQL (via asyncpg + LangGraph AsyncPostgresSaver) (003-task-display)
+- Python 3.11+ + litellm, langchain, pyyaml, python-dotenv (004-unified-llm-provider)
+- config/llm.yaml (YAML 配置文件) (004-unified-llm-provider)
+- Python 3.11+ + litellm, langchain-litellm, FastAPI, LangGraph, deepagents (004-unified-llm-provider)
+- N/A（配置通过环境变量） (004-unified-llm-provider)
 
 ## Recent Changes
-- 003-task-display: Added Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, LangGraph, DeepAgents, React 19, Vite 7
+- 004-unified-llm-provider: Added Python 3.11+ + litellm, langchain, pyyaml, python-dotenv

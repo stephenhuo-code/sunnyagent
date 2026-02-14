@@ -19,8 +19,8 @@ from pathlib import Path
 
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
-from langchain.chat_models import init_chat_model
 
+from backend.llm import get_model
 from backend.registry import register_agent
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,8 @@ def _register_package(pkg_dir: Path) -> None:
     # Memory: always load AGENTS.md
     memory = ["/AGENTS.md"]
 
-    model = init_chat_model("anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
+    # Use the package name as agent_name for model lookup, fallback to default
+    model = get_model(name)
 
     agent = create_deep_agent(
         model=model,

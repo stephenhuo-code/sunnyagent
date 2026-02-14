@@ -35,6 +35,7 @@ from backend.conversations.database import touch_conversation, get_conversation_
 from backend.auth.database import init_default_admin
 from backend.db import init_pool, close_pool, init_tables
 from backend.files import database as files_db
+from backend.llm import validate_config, get_current_provider
 
 # Environment variables already loaded above
 
@@ -87,6 +88,15 @@ async def _create_checkpointer():
 async def lifespan(app: FastAPI):
     """Manage agent and checkpointer lifecycle."""
     global _agent, _checkpointer
+
+    # Validate LLM configuration early (fail fast)
+    try:
+        validate_config()
+        provider = get_current_provider()
+        logger.info(f"Using LLM provider: {provider.value}")
+    except (ValueError, EnvironmentError) as e:
+        logger.error(f"LLM configuration error: {e}")
+        raise
 
     # Initialize container pool
     try:
