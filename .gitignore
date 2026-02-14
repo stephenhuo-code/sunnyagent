@@ -24,7 +24,9 @@ build/
 node_modules/
 frontend/dist/
 frontend/node_modules/
+frontend/playwright-report/
 *.local
+*.tsbuildinfo
 
 # SQLite databases
 *.db
@@ -51,9 +53,12 @@ logs/
 .coverage
 .pytest_cache/
 htmlcov/
+/tests/
 
-# Claude
-.claude/
+# Claude (忽略本地配置，但保留 agents 和 commands)
+.claude/*
+!.claude/agents/
+!.claude/commands/
 
 # Specify
 .specify/
