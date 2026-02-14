@@ -1,9 +1,9 @@
 """General fallback deep agent — orchestrates all tools and specialists."""
 
 from deepagents import create_deep_agent
-from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
 
+from backend.llm import get_model
 from backend.registry import AGENT_REGISTRY, get_all_tools, register_agent
 from backend.skills import SKILL_REGISTRY, get_skill_summaries
 from backend.tools.file_tools import read_uploaded_file
@@ -65,7 +65,7 @@ matches a skill description, use activate_skill() to load the full instructions.
 
 def build_general_agent():
     """Build the general agent. Must be called AFTER other agents are registered."""
-    model = init_chat_model("anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
+    model = get_model("general")
 
     subagent_specs = []
     for entry in AGENT_REGISTRY.values():

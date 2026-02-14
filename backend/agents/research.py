@@ -4,8 +4,8 @@ import logging
 from datetime import datetime
 
 from deepagents import create_deep_agent
-from langchain.chat_models import init_chat_model
 
+from backend.llm import get_model
 from backend.registry import register_agent
 from backend.research_prompts import RESEARCHER_INSTRUCTIONS
 from backend.research_tools import tavily_search, think_tool
@@ -42,7 +42,7 @@ def _build_system_prompt() -> str:
 
 
 _agent = create_deep_agent(
-    model=init_chat_model("anthropic:claude-sonnet-4-5-20250929", temperature=0.0),
+    model=get_model("research"),
     tools=_tools,
     system_prompt=_build_system_prompt(),
     name="research",
