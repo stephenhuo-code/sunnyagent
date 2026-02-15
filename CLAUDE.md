@@ -68,6 +68,24 @@ cd frontend && npx tsc      # TypeScript checking
 > - API 端点
 > - 禁止模式和命名规范
 
+### AIME 架构
+
+系统使用 AIME (Autonomous Intent-driven Multi-agent Executor) 架构：
+
+```
+User → IntentAnalyzer → AIMEPlanner
+                            ├─ direct_reply (简单问题)
+                            ├─ delegate → ActorFactory → Agent
+                            ├─ plan → 任务分解 → 并行执行
+                            └─ clarify (需要澄清)
+```
+
+**核心组件：**
+- `backend/aime/intent/` — 意图分析 (Rule → Keyword → LLM 分类器链)
+- `backend/aime/planner.py` — 任务规划与执行
+- `backend/aime/actor_factory.py` — 动态 Agent 选择
+- `backend/aime/progress_manager.py` — 进度追踪与 SSE 事件
+
 ### 快速概览
 
 ```

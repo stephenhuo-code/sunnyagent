@@ -8,7 +8,17 @@ The supervisor is itself a `create_agent` graph so its text responses stream
 token-by-token.  When it needs to delegate, it calls the `route` tool which
 returns a `Command(goto=...)` that the parent StateGraph uses to jump to the
 correct specialist subgraph node.
+
+AIME Mode (005-aime-supervisor):
+    User message → IntentAnalyzer → AIMEPlanner → Action handling
+    - direct_reply: Stream response directly
+    - delegate: Route to specialist via Actor Factory
+    - plan: Decompose into subtasks
+    - clarify: Ask clarification questions
 """
+
+import logging
+from typing import Any, AsyncGenerator
 
 from langchain.agents import create_agent
 from langchain_core.messages import SystemMessage
@@ -18,6 +28,8 @@ from langgraph.types import Checkpointer, Command
 
 from backend.llm import get_model
 from backend.registry import AGENT_REGISTRY, get_agent_descriptions
+
+logger = logging.getLogger(__name__)
 
 ROUTER_PROMPT_TEMPLATE = """\
 You are a routing supervisor. Analyze the user's message and decide what to do.
@@ -90,3 +102,52 @@ def build_supervisor(checkpointer: Checkpointer | None = None):
     builder.add_edge(START, "supervisor")
 
     return builder.compile(checkpointer=checkpointer)
+
+
+# =============================================================================
+# AIME-based Supervisor (005-aime-supervisor)
+# =============================================================================
+
+
+def get_aime_planner():
+    """Get or create the AIME Planner singleton.
+
+    Lazy initialization to avoid import cycles.
+
+    Returns:
+        AIMEPlanner instance
+    """
+    from backend.aime.planner import AIMEPlanner
+
+    # Trigger agent registration
+    import backend.agents  # noqa: F401
+
+    return AIMEPlanner()
+
+
+async def stream_aime_response(
+    thread_id: str,
+    message: str,
+    context: dict[str, Any] | None = None,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Stream AIME response as SSE events.
+
+    This is the AIME equivalent of stream_agent_response() from stream_handler.py.
+    Uses AIMEPlanner for intent analysis and action handling.
+
+    Args:
+        thread_id: Conversation thread ID
+        message: User message
+        context: Optional context (may contain explicit_agent, file_ids, etc.)
+
+    Yields:
+        SSE event dicts compatible with stream_handler.py format
+    """
+    planner = get_aime_planner()
+
+    async for event in planner.process(
+        message=message,
+        thread_id=thread_id,
+        context=context,
+    ):
+        yield event

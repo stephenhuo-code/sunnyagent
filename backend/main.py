@@ -2,14 +2,20 @@
 
 import atexit
 import logging
+import os
 import signal
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# Configure logging early - before any module imports
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
-import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 # Load environment variables early
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from backend.supervisor import build_supervisor
+from backend.supervisor import build_supervisor, stream_aime_response
 from backend.registry import AGENT_REGISTRY
 from backend.skills import SKILL_REGISTRY
 from backend.models import ChatRequest, ThreadCreate
@@ -97,6 +103,9 @@ async def lifespan(app: FastAPI):
     except (ValueError, EnvironmentError) as e:
         logger.error(f"LLM configuration error: {e}")
         raise
+
+    # Log AIME architecture status
+    logger.info("🚀 AIME architecture enabled - intent-driven multi-agent execution")
 
     # Initialize container pool
     try:
@@ -282,14 +291,19 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     if request.agent and request.agent in AGENT_REGISTRY:
         message = f"[ROUTE_TO: {request.agent}]\n{message}"
 
-    # Always use supervisor to maintain checkpointer consistency
-    target = _agent
-
     async def event_generator():
         try:
-            async for event in stream_agent_response(
-                target, request.thread_id, message,
-                user_id=str(current_user.id),
+            # Use AIME architecture for intent-driven routing
+            context = {
+                "explicit_agent": request.agent if request.agent in AGENT_REGISTRY else None,
+                "skill": request.skill,
+                "file_ids": request.file_ids,
+                "user_id": str(current_user.id),
+            }
+            async for event in stream_aime_response(
+                thread_id=request.thread_id,
+                message=message,
+                context=context,
             ):
                 yield event
         except Exception:
