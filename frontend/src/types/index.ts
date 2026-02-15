@@ -22,7 +22,7 @@ export interface SpawnedTask {
   task_id: string;
   subagent_type: string;
   description: string;
-  status: "running" | "success" | "error";
+  status: "pending" | "running" | "success" | "error";
   duration_ms?: number;
   toolCalls: ToolCall[];
 }
@@ -52,7 +52,8 @@ export type SSEEvent =
   | { event: "error"; data: { message: string } }
   | { event: "done"; data: Record<string, never> }
   | { event: "todos_updated"; data: { todos: Todo[]; timestamp: string } }
-  | { event: "task_spawned"; data: { task_id: string; subagent_type: string; description: string } }
+  | { event: "task_spawned"; data: { task_id: string; subagent_type: string; description: string; status?: "pending" | "running" } }
+  | { event: "task_started"; data: { task_id: string } }
   | { event: "task_completed"; data: { task_id: string; duration_ms: number; status: "success" | "error" } };
 
 /** A tool call with its current status */
@@ -66,7 +67,7 @@ export interface ToolCall {
 
 /** Thinking bubble state for agent reasoning steps */
 export interface ThinkingState {
-  steps: string[];           // Thinking steps from backend thinking events
+  steps: ThinkingStep[];     // Thinking steps from backend thinking events
   isThinking: boolean;
   startTime: number;
   durationSeconds: number;

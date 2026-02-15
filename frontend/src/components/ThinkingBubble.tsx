@@ -76,10 +76,15 @@ export default function ThinkingBubble({ thinking }: ThinkingBubbleProps) {
       {expanded && thinking.steps.length > 0 && (
         <div className="thinking-content">
           {/* Display thinking steps only - response content shows in Layer 3 */}
+          {/* Steps with type (planning/replanning/routing) show full content */}
+          {/* Steps without type (agent think_tool) show only first line, truncated */}
           <div className="thinking-steps">
             {thinking.steps.map((step, i) => (
-              <div key={i} className="thinking-step">
-                {step}
+              <div
+                key={i}
+                className={`thinking-step ${step.type ? 'full' : 'single-line'}`}
+              >
+                {step.type ? step.content : step.content.split('\n')[0]}
               </div>
             ))}
           </div>

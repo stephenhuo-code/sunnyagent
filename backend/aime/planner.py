@@ -291,26 +291,37 @@ class AIMEPlanner:
             )
             event_id += 1
 
-            # Add task to progress manager and emit task_spawned
+            # Add task to progress manager
             self.progress_manager.add_task(spec)
+
+            # Emit task_spawned with pending status (task created but not yet started)
             yield _format_sse(
                 "task_spawned",
                 {
                     "task_id": spec.id,
                     "subagent_type": actor.name,
                     "description": message[:200],
+                    "status": "pending",
                 },
                 event_id,
             )
             event_id += 1
 
-            # Start task
+            # Emit task_started when execution begins
+            yield _format_sse(
+                "task_started",
+                {"task_id": spec.id},
+                event_id,
+            )
+            event_id += 1
+
+            # Start task in progress manager
             self.progress_manager.start_task(spec.id, actor.name)
 
-            # Execute actor
+            # Execute actor with task_id for tool call association
             start_time = time.time()
             async for event in self._execute_actor(
-                actor, message, thread_id, event_id
+                actor, message, thread_id, event_id, task_id=spec.id
             ):
                 event_id += 1
                 yield event
@@ -368,6 +379,7 @@ class AIMEPlanner:
         message: str,
         thread_id: str,
         start_event_id: int,
+        task_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute actor and stream response.
 
@@ -376,6 +388,7 @@ class AIMEPlanner:
             message: User message
             thread_id: Thread ID
             start_event_id: Starting event ID
+            task_id: Optional parent task ID for associating tool calls with this task
 
         Yields:
             SSE events from actor execution
@@ -399,6 +412,7 @@ class AIMEPlanner:
                 agent=actor.graph,
                 thread_id=thread_id,
                 message=message,
+                task_id=task_id,
             ):
                 # Re-emit events (excluding done, we handle that ourselves)
                 if event.get("event") != "done":
@@ -468,20 +482,52 @@ class AIMEPlanner:
                 f"[_handle_plan] Decomposition complete - {len(subtasks)} subtasks created"
             )
 
-            # Step 2: Add all subtasks to progress manager
+            # Step 2: Add all subtasks to progress manager and emit all task_spawned (pending)
+            # Pre-select actors for all subtasks to emit all tasks at once
+            task_actors: dict[str, Actor] = {}
             for spec in subtasks:
                 self.progress_manager.add_task(spec)
+                try:
+                    actor = self.actor_factory.select_actor(spec)
+                    task_actors[spec.id] = actor
+                except ValueError as e:
+                    logger.error(f"Failed to select actor for {spec.id}: {e}")
+                    self.progress_manager.fail_task(spec.id, str(e))
 
-            # Emit todos_updated with all subtasks
+            # Emit thinking event with task list summary (shows task decomposition result)
+            task_list_lines = ["任务分解完成:"]
+            for i, spec in enumerate(subtasks, 1):
+                actor = task_actors.get(spec.id)
+                actor_name = actor.name if actor else "unknown"
+                # Truncate description to first 50 characters
+                desc_preview = spec.description[:50] + ("..." if len(spec.description) > 50 else "")
+                task_list_lines.append(f"{i}. {actor_name}: {desc_preview}")
+
             yield _format_sse(
-                "todos_updated",
+                "thinking",
                 {
-                    "todos": self.progress_manager.to_todos(),
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "content": "\n".join(task_list_lines),
+                    "type": "planning",
                 },
                 event_id,
             )
             event_id += 1
+
+            # Emit all task_spawned events with pending status (show all tasks at once)
+            for spec in subtasks:
+                if spec.id in task_actors:
+                    actor = task_actors[spec.id]
+                    yield _format_sse(
+                        "task_spawned",
+                        {
+                            "task_id": spec.id,
+                            "subagent_type": actor.name,
+                            "description": spec.description[:200],
+                            "status": "pending",
+                        },
+                        event_id,
+                    )
+                    event_id += 1
 
             # Step 3: Execution loop
             max_parallel = 3
@@ -502,26 +548,20 @@ class AIMEPlanner:
 
                 # Execute ready tasks (limited parallelism)
                 for spec in ready_tasks[:max_parallel]:
+                    # Skip if actor selection failed earlier
+                    if spec.id not in task_actors:
+                        continue
+
+                    actor = task_actors[spec.id]
+
                     # Add context from dependencies
                     if spec.depends_on:
                         spec.context = self.progress_manager.get_context_for_task(spec)
 
-                    # Select actor
-                    try:
-                        actor = self.actor_factory.select_actor(spec)
-                    except ValueError as e:
-                        logger.error(f"Failed to select actor for {spec.id}: {e}")
-                        self.progress_manager.fail_task(spec.id, str(e))
-                        continue
-
-                    # Emit task_spawned
+                    # Emit task_started when execution begins
                     yield _format_sse(
-                        "task_spawned",
-                        {
-                            "task_id": spec.id,
-                            "subagent_type": actor.name,
-                            "description": spec.description[:200],
-                        },
+                        "task_started",
+                        {"task_id": spec.id},
                         event_id,
                     )
                     event_id += 1
@@ -542,10 +582,10 @@ class AIMEPlanner:
                             )
                             task_message = f"{spec.description}\n\n## Context from previous tasks:\n{context_str}"
 
-                        # Execute and collect output
+                        # Execute and collect output with task_id for tool call association
                         result_text = ""
                         async for event in self._execute_actor(
-                            actor, task_message, thread_id, event_id
+                            actor, task_message, thread_id, event_id, task_id=spec.id
                         ):
                             event_id += 1
                             yield event
@@ -609,17 +649,6 @@ class AIMEPlanner:
                             )
                             event_id += 1
 
-                # Emit updated todos
-                yield _format_sse(
-                    "todos_updated",
-                    {
-                        "todos": self.progress_manager.to_todos(),
-                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    },
-                    event_id,
-                )
-                event_id += 1
-
             # Step 4: Generate final summary
             if results:
                 summary = await self._generate_summary(message, results)
@@ -647,34 +676,34 @@ class AIMEPlanner:
             List of SubtaskSpecs with dependencies
         """
         decompose_prompt = """\
-You are a task decomposition expert. Break down the following complex task into smaller, executable subtasks.
+你是一个任务分解专家。请将以下复杂任务分解为更小的可执行子任务。
 
-## Task
+## 任务
 {message}
 
-## Output Format
-Return a JSON array of subtasks:
+## 输出格式
+请用中文描述每个子任务，返回 JSON 数组：
 ```json
 [
   {{
-    "description": "Step 1 description",
+    "description": "子任务1的中文描述",
     "capabilities": ["capability1"],
     "depends_on": []
   }},
   {{
-    "description": "Step 2 description",
+    "description": "子任务2的中文描述",
     "capabilities": ["capability2"],
     "depends_on": [0]
   }}
 ]
 ```
 
-Rules:
-- Each subtask should be independently executable
-- Use depends_on to reference earlier task indices (0-based)
-- Capabilities: "web_search", "database", "code_execution", "file_generation"
-- Keep descriptions clear and actionable
-- Maximum 5 subtasks
+规则：
+- 每个子任务应可独立执行
+- 使用 depends_on 引用前面任务的索引（从0开始）
+- 能力类型: "web_search", "database", "code_execution", "file_generation"
+- **描述必须使用中文**
+- 最多5个子任务
 """
 
         messages = [

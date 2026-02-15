@@ -206,7 +206,8 @@ export function useChat(options: UseChatOptions = {}) {
                           }),
                           steps: [
                             ...(m.thinking?.steps ?? []),
-                            event.data.content,
+                            // Save type info with content for display differentiation
+                            { content: event.data.content, type: event.data.type, timestamp: Date.now() },
                           ],
                         },
                       }
@@ -233,12 +234,12 @@ export function useChat(options: UseChatOptions = {}) {
             }
 
             case "task_spawned": {
-              console.log(`[TASK_SPAWNED] task_id=${event.data.task_id}, type=${event.data.subagent_type}`, event.data.description);
+              console.log(`[TASK_SPAWNED] task_id=${event.data.task_id}, type=${event.data.subagent_type}, status=${event.data.status}`, event.data.description);
               const newTask: SpawnedTask = {
                 task_id: event.data.task_id,
                 subagent_type: event.data.subagent_type,
                 description: event.data.description,
-                status: "running",
+                status: event.data.status || "pending",  // Support specifying initial status
                 toolCalls: [],
               };
               setMessages((prev) =>
@@ -249,6 +250,25 @@ export function useChat(options: UseChatOptions = {}) {
                         // Upgrade to agent scenario when we see task_spawned
                         displayScenario: m.displayScenario === "planning" ? "planning" : "agent" as DisplayScenario,
                         spawnedTasks: [...(m.spawnedTasks ?? []), newTask],
+                      }
+                    : m,
+                ),
+              );
+              break;
+            }
+
+            case "task_started": {
+              console.log(`[TASK_STARTED] task_id=${event.data.task_id}`);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        spawnedTasks: (m.spawnedTasks ?? []).map((task) =>
+                          task.task_id === event.data.task_id
+                            ? { ...task, status: "running" as const }
+                            : task
+                        ),
                       }
                     : m,
                 ),

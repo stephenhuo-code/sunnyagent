@@ -498,6 +498,19 @@ body {
   border-bottom: none;
 }
 
+/* Full display for planning/replanning/routing steps */
+.thinking-step.full {
+  white-space: pre-wrap;
+}
+
+/* Single-line display for agent think_tool steps (truncated) */
+.thinking-step.single-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 .thinking-content {
   border-top: 1px solid var(--border);
   max-height: 400px;
@@ -1316,6 +1329,11 @@ body {
   border-radius: var(--radius-sm);
   margin-bottom: 4px;
   overflow: hidden;
+}
+
+.spawned-task.pending {
+  border-left: 3px solid var(--text-dim);
+  opacity: 0.8;
 }
 
 .spawned-task.running {

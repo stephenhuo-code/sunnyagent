@@ -47,6 +47,9 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
         return <CheckCircle size={16} className="task-icon completed" />;
       case "error":
         return <XCircle size={16} className="task-icon error" />;
+      case "pending":
+        return <Circle size={16} className="task-icon pending" />;
+      case "running":
       default:
         return <Loader2 size={16} className="task-icon in-progress spinning" />;
     }
@@ -87,7 +90,13 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
                   )}
                   {renderTaskStatus(task.status)}
                   <span className="task-type">{task.subagent_type}</span>
-                  <span className="task-description">{task.description}</span>
+                  {task.description && (
+                    <span className="task-description">
+                      {task.description.length > 30
+                        ? task.description.slice(0, 30) + "..."
+                        : task.description}
+                    </span>
+                  )}
                   {task.duration_ms !== undefined && (
                     <span className="task-duration">{(task.duration_ms / 1000).toFixed(1)}s</span>
                   )}

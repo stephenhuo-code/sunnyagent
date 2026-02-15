@@ -141,6 +141,7 @@ async def stream_agent_response(
     thread_id: str,
     message: str,
     user_id: str | None = None,
+    task_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream agent response as SSE events.
 
@@ -158,6 +159,9 @@ async def stream_agent_response(
         agent: The compiled supervisor graph.
         thread_id: Thread ID for conversation persistence.
         message: User message to send.
+        user_id: Optional user ID for context.
+        task_id: Optional parent task ID for associating tool calls with tasks.
+                 When provided, all emitted tool_call events will include this task_id.
 
     Yields:
         SSE-formatted event dicts with sequential IDs for reconnection support.
@@ -179,7 +183,8 @@ async def stream_agent_response(
     # Task tracking for task_spawned/task_completed events (T007, T008)
     active_tasks: dict[str, TaskTracker] = {}
     # Current task context for associating tool calls with tasks (T010)
-    current_task_id: str | None = None
+    # Initialize with passed task_id if provided (from AIME Planner)
+    current_task_id: str | None = task_id
 
     # Previous todos state for change detection (T005, T006)
     previous_todos: list[dict] | None = None
