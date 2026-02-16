@@ -1,10 +1,17 @@
 # Architecture: AIME Agent Core
 
-**Branch**: `005-aime-supervisor` | **Date**: 2026-02-16 | **Plan**: [plan.md](./plan.md)
-
-## Overview
+> **核心架构文档** | **Last Updated**: 2026-02-16 | **Status**: Active
 
 本文档描述 AIME (Autonomous Intent-driven Multi-agent Executor) 架构的核心组件及其交互关系。
+
+**相关文档**:
+- [系统总体架构](./architecture.md)
+- [开发规范](./ai-dev-best-practices.md)
+- [产品路线图](./roadmap.md)
+
+---
+
+## Overview
 
 ---
 
@@ -654,9 +661,20 @@ CREATE INDEX idx_task_contexts_expires ON task_contexts(expires_at);
 
 ## 参考文档
 
-- [spec.md](./spec.md) - 完整功能规格
-- [plan.md](./plan.md) - 实现计划
-- [data-model.md](./data-model.md) - 数据结构定义
-- [components/context-manager/](./components/context-manager/) - ContextManager详细文档
-- [research.md](./research.md) - 技术研究
-- [quickstart.md](./quickstart.md) - 开发者指南
+### 核心文档 (docs/)
+- [系统总体架构](./architecture.md) - SunnyAgent 整体架构
+- [开发规范](./ai-dev-best-practices.md) - AI辅助开发最佳实践
+- [产品路线图](./roadmap.md) - 产品迭代计划
+
+### AIME 详细设计 (specs/005-aime-supervisor/)
+- [spec.md](../specs/005-aime-supervisor/spec.md) - 完整功能规格
+- [plan.md](../specs/005-aime-supervisor/plan.md) - 实现计划
+- [data-model.md](../specs/005-aime-supervisor/data-model.md) - 数据结构定义
+- [ContextManager](../specs/005-aime-supervisor/components/context-manager/) - 上下文管理器详细文档
+
+### 源代码 (backend/aime/)
+- `planner.py` - AIMEPlanner 主协调器
+- `context_manager.py` - ContextManager 上下文管理
+- `progress_manager.py` - ProgressManager 状态追踪
+- `actor_factory.py` - ActorFactory Agent选择
+- `intent/` - 意图分析子模块
