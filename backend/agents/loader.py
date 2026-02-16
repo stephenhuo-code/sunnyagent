@@ -12,11 +12,23 @@ Package structure:
                     SKILL.md
                 social-media/
                     SKILL.md
+
+AGENTS.md frontmatter format (AIME extensions):
+    ---
+    name: content-writer
+    description: Creates blog posts and social media content
+    capabilities:
+      - content_generation
+      - writing
+      - social_media
+    ---
 """
 
 import logging
+import re
 from pathlib import Path
 
+import yaml
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
 
@@ -26,6 +38,47 @@ from backend.registry import register_agent
 logger = logging.getLogger(__name__)
 
 _PACKAGES_DIR = Path(__file__).resolve().parent.parent.parent / "packages"
+
+
+def _parse_agents_md_frontmatter(agents_md: Path) -> dict[str, str | list[str]]:
+    """Parse YAML frontmatter from AGENTS.md file.
+
+    Returns dict with optional keys:
+        - name: Agent name override
+        - description: Agent description
+        - capabilities: List of capability strings for AIME actor matching
+
+    Returns empty dict if no frontmatter or parsing fails.
+    """
+    try:
+        content = agents_md.read_text()
+    except Exception as e:
+        logger.warning(f"Failed to read {agents_md}: {e}")
+        return {}
+
+    # Extract YAML frontmatter between --- markers
+    match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
+    if not match:
+        return {}
+
+    try:
+        metadata = yaml.safe_load(match.group(1))
+        if not isinstance(metadata, dict):
+            return {}
+
+        result: dict[str, str | list[str]] = {}
+
+        if "name" in metadata:
+            result["name"] = str(metadata["name"])
+        if "description" in metadata:
+            result["description"] = str(metadata["description"])
+        if "capabilities" in metadata and isinstance(metadata["capabilities"], list):
+            result["capabilities"] = [str(c) for c in metadata["capabilities"]]
+
+        return result
+    except yaml.YAMLError as e:
+        logger.warning(f"Invalid YAML in {agents_md}: {e}")
+        return {}
 
 
 def load_package_agents() -> None:
@@ -51,8 +104,17 @@ def _register_package(pkg_dir: Path) -> None:
     name = pkg_dir.name
     agents_md = pkg_dir / "AGENTS.md"
 
-    # Extract description from AGENTS.md first line (# Title) or use name
-    description = _extract_description(agents_md)
+    # Parse YAML frontmatter for AIME metadata
+    frontmatter = _parse_agents_md_frontmatter(agents_md)
+
+    # Use frontmatter values with fallbacks
+    agent_name = str(frontmatter.get("name", name))
+    description = str(frontmatter.get("description", "")) or _extract_description(agents_md)
+    capabilities: list[str] = []
+    if "capabilities" in frontmatter:
+        cap_value = frontmatter["capabilities"]
+        if isinstance(cap_value, list):
+            capabilities = cap_value
 
     # Set up FilesystemBackend scoped to package directory
     backend = FilesystemBackend(root_dir=pkg_dir, virtual_mode=True)
@@ -67,26 +129,29 @@ def _register_package(pkg_dir: Path) -> None:
     memory = ["/AGENTS.md"]
 
     # Use the package name as agent_name for model lookup, fallback to default
-    model = get_model(name)
+    model = get_model(agent_name)
 
     agent = create_deep_agent(
         model=model,
         backend=backend,
         skills=skills,
         memory=memory,
-        name=name,
+        name=agent_name,
     )
 
     register_agent(
-        name=name,
+        name=agent_name,
         description=description,
         graph=agent,
         show_in_selector=False,
+        capabilities=capabilities,
+        source="package",
     )
 
     skill_count = len(list(skills_dir.iterdir())) if skills_dir.is_dir() else 0
+    cap_info = f", capabilities={capabilities}" if capabilities else ""
     logger.info(
-        "Registered package agent '%s' (%d skills)", name, skill_count
+        "Registered package agent '%s' (%d skills%s)", agent_name, skill_count, cap_info
     )
 
 

@@ -43,4 +43,6 @@ register_agent(
     graph=_agent,
     tools=_tools,
     icon="database",
+    capabilities=["database", "sql_query"],
+    source="preset",
 )

@@ -1,4 +1,19 @@
-"""General fallback deep agent — orchestrates all tools and specialists."""
+"""General fallback deep agent — orchestrates all tools and specialists.
+
+DEPRECATION NOTE (005-aime-supervisor):
+    This module is being superseded by the AIME architecture:
+    - backend/aime/planner.py: AIMEPlanner handles task orchestration
+    - backend/aime/actors/generic.py: Generic actor for fallback execution
+    - backend/aime/actor_factory.py: Dynamic actor selection
+
+    The 'general' agent is still registered for backwards compatibility
+    and is used as the fallback when no specialist matches. Once AIME
+    is fully validated, this module may be removed.
+
+    Migration path:
+    1. Use stream_aime_response() from backend/supervisor.py
+    2. AIMEPlanner will use ActorFactory to select 'general' when needed
+"""
 
 from deepagents import create_deep_agent
 from langchain_core.tools import tool
@@ -102,4 +117,6 @@ def build_general_agent():
         ),
         graph=agent,
         icon="sparkles",
+        capabilities=["code_execution", "file_generation", "orchestration", "multi_step"],
+        source="preset",
     )

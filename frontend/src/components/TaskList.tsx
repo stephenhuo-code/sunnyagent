@@ -1,5 +1,7 @@
 import { useState, memo } from "react";
-import { ChevronRight, ChevronDown, CheckCircle, Circle, Loader2, XCircle } from "lucide-react";
+import { ChevronRight, ChevronDown, CheckCircle, Circle, Loader2, XCircle, MinusCircle } from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ToolCallCard from "./ToolCallCard";
 import type { Todo, SpawnedTask } from "../types";
 
@@ -46,11 +48,20 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
       case "success":
         return <CheckCircle size={16} className="task-icon completed" />;
       case "error":
+      case "failed":
         return <XCircle size={16} className="task-icon error" />;
+      case "cancelled":
+        return <MinusCircle size={16} className="task-icon cancelled" />;
+      case "pending":
+        return <Circle size={16} className="task-icon pending" />;
+      case "running":
       default:
         return <Loader2 size={16} className="task-icon in-progress spinning" />;
     }
   };
+
+  // Filter tasks: only show active tasks, completely hide cancelled tasks
+  const activeTasks = spawnedTasks?.filter(task => task.status !== "cancelled") || [];
 
   return (
     <div className="task-list">
@@ -66,32 +77,60 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
         </div>
       )}
 
-      {/* Render SpawnedTask items (from agent mode) */}
-      {spawnedTasks && spawnedTasks.length > 0 && (
+      {/* Render active SpawnedTask items (from agent mode) */}
+      {activeTasks.length > 0 && (
         <div className="task-section">
-          {spawnedTasks.map((task) => {
+          {activeTasks.map((task) => {
             const isExpanded = expandedTasks.has(task.task_id);
             const hasToolCalls = task.toolCalls && task.toolCalls.length > 0;
+            const hasOutput = task.output && task.output.trim().length > 0;
+            const hasTodos = task.todos && task.todos.length > 0;
+            const isExpandable = hasToolCalls || hasOutput || hasTodos;
 
             return (
               <div key={task.task_id} className={`spawned-task ${task.status}`}>
                 <div
                   className="spawned-task-header"
-                  onClick={() => hasToolCalls && toggleTask(task.task_id)}
-                  style={{ cursor: hasToolCalls ? "pointer" : "default" }}
+                  onClick={() => isExpandable && toggleTask(task.task_id)}
+                  style={{ cursor: isExpandable ? "pointer" : "default" }}
                 >
-                  {hasToolCalls && (
+                  {isExpandable && (
                     <span className="expand-icon">
                       {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </span>
                   )}
                   {renderTaskStatus(task.status)}
                   <span className="task-type">{task.subagent_type}</span>
-                  <span className="task-description">{task.description}</span>
+                  {task.description && (
+                    <span className="task-description">
+                      {task.description.length > 30
+                        ? task.description.slice(0, 30) + "..."
+                        : task.description}
+                    </span>
+                  )}
                   {task.duration_ms !== undefined && (
                     <span className="task-duration">{(task.duration_ms / 1000).toFixed(1)}s</span>
                   )}
                 </div>
+
+                {/* Task todos (agent internal task breakdown) */}
+                {isExpanded && hasTodos && (
+                  <div className="spawned-task-todos">
+                    {task.todos!.map((todo, idx) => (
+                      <div key={idx} className={`task-item ${todo.status}`}>
+                        {renderTodoStatus(todo.status)}
+                        <span className="task-content">{todo.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Task output (shown after todos) */}
+                {isExpanded && hasOutput && (
+                  <div className="task-output">
+                    <Markdown remarkPlugins={[remarkGfm]}>{task.output}</Markdown>
+                  </div>
+                )}
 
                 {/* Expanded tool calls */}
                 {isExpanded && hasToolCalls && (
@@ -106,6 +145,7 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
           })}
         </div>
       )}
+
     </div>
   );
 }

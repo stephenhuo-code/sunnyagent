@@ -1,8 +1,10 @@
 """API router for conversation management."""
 
+import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from backend.aime.context_manager import ContextManager
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import UserInfo
 from backend.conversations.models import (
@@ -12,6 +14,8 @@ from backend.conversations.models import (
     ConversationUpdate,
 )
 from backend.conversations import database as db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -96,10 +100,28 @@ async def delete_conversation(
     conversation_id: uuid.UUID,
     current_user: UserInfo = Depends(get_current_user)
 ) -> None:
-    """Delete a conversation."""
+    """Delete a conversation and clean up associated context cache."""
+    # Get conversation first to get thread_id for cache cleanup
+    conversation = await db.get_conversation(conversation_id, current_user.id)
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+
+    thread_id = conversation.thread_id
+
+    # Delete conversation (CASCADE will clean up task_contexts in DB)
     deleted = await db.delete_conversation(conversation_id, current_user.id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
+
+    # Clean up in-memory cache (T037)
+    try:
+        context_manager = ContextManager()
+        await context_manager.cleanup_thread(thread_id)
+    except Exception as e:
+        logger.warning(f"Failed to cleanup context cache for thread {thread_id}: {e}")

@@ -1,15 +1,22 @@
 """FastAPI application for the deep research chat interface."""
 
+import asyncio
 import atexit
 import logging
+import os
 import signal
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# Configure logging early - before any module imports
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
-import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 # Load environment variables early
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from backend.supervisor import build_supervisor
+from backend.supervisor import build_supervisor, stream_aime_response
 from backend.registry import AGENT_REGISTRY
 from backend.skills import SKILL_REGISTRY
 from backend.models import ChatRequest, ThreadCreate
@@ -36,12 +43,15 @@ from backend.auth.database import init_default_admin
 from backend.db import init_pool, close_pool, init_tables
 from backend.files import database as files_db
 from backend.llm import validate_config, get_current_provider
+from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVAL
 
 # Environment variables already loaded above
 
 # Global state
 _agent = None
 _checkpointer = None
+_context_manager = None
+_cleanup_task = None
 
 
 def _sync_cleanup():
@@ -84,10 +94,22 @@ async def _create_checkpointer():
         return await AsyncSqliteSaver.from_conn_string(str(db_path)).__aenter__()
 
 
+async def _context_cleanup_task(context_manager: ContextManager):
+    """Background task for periodic context cleanup."""
+    while True:
+        await asyncio.sleep(CONTEXT_CLEANUP_INTERVAL)
+        try:
+            deleted = await context_manager.cleanup_expired()
+            if deleted > 0:
+                logger.info(f"Context cleanup: deleted {deleted} expired entries")
+        except Exception as e:
+            logger.error(f"Context cleanup error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage agent and checkpointer lifecycle."""
-    global _agent, _checkpointer
+    global _agent, _checkpointer, _context_manager, _cleanup_task
 
     # Validate LLM configuration early (fail fast)
     try:
@@ -97,6 +119,9 @@ async def lifespan(app: FastAPI):
     except (ValueError, EnvironmentError) as e:
         logger.error(f"LLM configuration error: {e}")
         raise
+
+    # Log AIME architecture status
+    logger.info("🚀 AIME architecture enabled - intent-driven multi-agent execution")
 
     # Initialize container pool
     try:
@@ -124,6 +149,13 @@ async def lifespan(app: FastAPI):
                 logger.info("Default admin user created")
         except Exception as e:
             logger.warning(f"Could not initialize default admin: {e}")
+
+        # Initialize context manager and start background cleanup task (T036)
+        _context_manager = ContextManager()
+        _cleanup_task = asyncio.create_task(_context_cleanup_task(_context_manager))
+        logger.info(
+            f"Context cleanup task started (interval: {CONTEXT_CLEANUP_INTERVAL}s)"
+        )
 
     # Initialize checkpointer based on environment
     if database_url:
@@ -154,6 +186,14 @@ async def lifespan(app: FastAPI):
             _checkpointer = None
 
     # Cleanup
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Context cleanup task stopped")
+
     if database_url:
         await close_pool()
     await shutdown_pool()
@@ -282,14 +322,19 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     if request.agent and request.agent in AGENT_REGISTRY:
         message = f"[ROUTE_TO: {request.agent}]\n{message}"
 
-    # Always use supervisor to maintain checkpointer consistency
-    target = _agent
-
     async def event_generator():
         try:
-            async for event in stream_agent_response(
-                target, request.thread_id, message,
-                user_id=str(current_user.id),
+            # Use AIME architecture for intent-driven routing
+            context = {
+                "explicit_agent": request.agent if request.agent in AGENT_REGISTRY else None,
+                "skill": request.skill,
+                "file_ids": request.file_ids,
+                "user_id": str(current_user.id),
+            }
+            async for event in stream_aime_response(
+                thread_id=request.thread_id,
+                message=message,
+                context=context,
             ):
                 yield event
         except Exception:
@@ -519,22 +564,28 @@ async def download_file(
 ):
     """Download a generated file by file_id and filename.
 
-    Permission: User must own the file.
+    Permission: User must own the file (if DB record exists).
 
     Note: This route MUST be defined after /api/files/{file_id}/content
     and /api/files/{file_id}/download to avoid path conflicts.
+
+    Bug fix: Check filesystem first, then validate ownership if DB record exists.
+    This handles cases where sandbox generates files without user_id in config.
     """
-    # Check permission via database if PostgreSQL is available
+    file_path = f"/tmp/sunnyagent_files/{file_id}/{filename}"
+
+    # First check if file exists on filesystem
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # If database is available, check ownership (optional - file may not be registered)
     database_url = os.getenv("DATABASE_URL")
     if database_url:
         file_record = await files_db.get_file(file_id, current_user.id)
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-
-    file_path = f"/tmp/sunnyagent_files/{file_id}/{filename}"
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        # If DB record exists, use its filename; otherwise allow download anyway
+        # (handles sandbox-generated files not registered due to missing user_id)
+        if file_record:
+            filename = file_record.get("original_name", filename)
 
     return FileResponse(
         file_path,

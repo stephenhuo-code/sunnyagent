@@ -57,4 +57,6 @@ register_agent(
     graph=_agent,
     tools=_tools,
     icon="search",
+    capabilities=["web_search", "news_search", "academic_search"],
+    source="preset",
 )
