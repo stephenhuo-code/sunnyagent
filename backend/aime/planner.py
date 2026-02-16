@@ -21,6 +21,7 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.aime.actor_factory import ActorFactory
+from backend.aime.context_manager import ContextManager
 from backend.aime.intent import IntentAnalyzer, IntentResult
 from backend.aime.models import Actor, SubtaskSpec
 from backend.aime.progress_manager import ProgressManager
@@ -39,6 +40,23 @@ Guidelines:
 - Use markdown formatting when appropriate
 - For math questions, show the calculation
 - For factual questions, provide accurate information
+"""
+
+# Task failure marker - agents should use this prefix when they cannot complete a task
+TASK_FAILED_MARKER = "[TASK_FAILED]"
+
+# Task instruction template that instructs agents to declare failure explicitly
+TASK_INSTRUCTION_TEMPLATE = """{description}
+
+## 重要指令
+如果你无法完成此任务（例如：没有数据访问权限、找不到相关信息、缺少必要资源），
+请在回复开头明确声明：
+
+[TASK_FAILED] 原因: <简要说明无法完成的原因>
+
+然后可以提供替代建议。
+
+如果你能够完成任务，直接提供结果，无需任何前缀。
 """
 
 
@@ -75,6 +93,7 @@ class AIMEPlanner:
         intent_analyzer: IntentAnalyzer | None = None,
         actor_factory: ActorFactory | None = None,
         progress_manager: ProgressManager | None = None,
+        context_manager: ContextManager | None = None,
     ):
         """Initialize the AIME Planner.
 
@@ -82,12 +101,14 @@ class AIMEPlanner:
             intent_analyzer: Optional custom intent analyzer
             actor_factory: Optional custom actor factory
             progress_manager: Optional custom progress manager
+            context_manager: Optional custom context manager
         """
         self.intent_analyzer = intent_analyzer or IntentAnalyzer()
         self.actor_factory = actor_factory or ActorFactory()
         self.progress_manager = progress_manager or ProgressManager()
+        self.context_manager = context_manager or ContextManager()
         self._model = get_model("supervisor")
-        logger.info("AIMEPlanner initialized")
+        logger.info("AIMEPlanner initialized with ContextManager")
 
     async def process(
         self,
@@ -109,6 +130,9 @@ class AIMEPlanner:
             SSE event dicts for frontend streaming
         """
         event_id = 0
+
+        # Save user_id for downstream execution (P0 fix)
+        self._current_user_id = context.get("user_id") if context else None
 
         # Log entry point
         logger.info(
@@ -320,11 +344,33 @@ class AIMEPlanner:
 
             # Execute actor with task_id for tool call association
             start_time = time.time()
+            result_text = ""  # Collect task output for final summary
             async for event in self._execute_actor(
-                actor, message, thread_id, event_id, task_id=spec.id
+                actor, message, thread_id, event_id,
+                task_id=spec.id,
+                user_id=self._current_user_id,
             ):
                 event_id += 1
-                yield event
+                # Ensure tool_call events are associated with this task
+                # (Same transformation as _handle_plan to maintain consistent display)
+                event_type = event.get("event")
+                if event_type in ("tool_call_start", "tool_call_result"):
+                    data = json.loads(event.get("data", "{}"))
+                    # Force task_id to be the delegate task's ID
+                    data["task_id"] = spec.id
+                    yield _format_sse(str(event_type), data, event_id)
+                elif event.get("event") == "text_delta":
+                    # Convert text_delta to task_output (same as plan mode)
+                    data = json.loads(event.get("data", "{}"))
+                    text_chunk = data.get("text", "")
+                    result_text += text_chunk  # Collect for final summary
+                    yield _format_sse(
+                        "task_output",
+                        {"task_id": spec.id, "text": text_chunk},
+                        event_id,
+                    )
+                else:
+                    yield event
 
             # Complete task
             duration_ms = int((time.time() - start_time) * 1000)
@@ -342,6 +388,16 @@ class AIMEPlanner:
                 },
                 event_id,
             )
+            event_id += 1
+
+            # Output collected result to result area (text_delta)
+            # This ensures the final answer appears outside the task node
+            if result_text:
+                yield _format_sse(
+                    "text_delta",
+                    {"text": f"\n\n{result_text}"},
+                    event_id,
+                )
 
         except ValueError as e:
             # Agent not found error
@@ -380,6 +436,7 @@ class AIMEPlanner:
         thread_id: str,
         start_event_id: int,
         task_id: str | None = None,
+        user_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute actor and stream response.
 
@@ -389,6 +446,7 @@ class AIMEPlanner:
             thread_id: Thread ID
             start_event_id: Starting event ID
             task_id: Optional parent task ID for associating tool calls with this task
+            user_id: Optional user ID for file registration and permissions
 
         Yields:
             SSE events from actor execution
@@ -413,6 +471,7 @@ class AIMEPlanner:
                 thread_id=thread_id,
                 message=message,
                 task_id=task_id,
+                user_id=user_id,
             ):
                 # Re-emit events (excluding done, we handle that ourselves)
                 if event.get("event") != "done":
@@ -453,6 +512,9 @@ class AIMEPlanner:
         """
         logger.info("[_handle_plan] Starting task decomposition and execution")
         event_id = start_event_id
+
+        # Reset replanning flag for this plan execution
+        self._has_replanned = False
 
         # Emit thinking event (planning phase)
         yield _format_sse(
@@ -554,9 +616,15 @@ class AIMEPlanner:
 
                     actor = task_actors[spec.id]
 
-                    # Add context from dependencies
+                    # Prepare context from dependencies using ContextManager
+                    context_str = ""
                     if spec.depends_on:
-                        spec.context = self.progress_manager.get_context_for_task(spec)
+                        context_str = await self.context_manager.prepare_for_task(
+                            task_description=spec.description,
+                            depends_on=spec.depends_on,
+                            thread_id=thread_id,
+                            expected_input=spec.expected_input,
+                        )
 
                     # Emit task_started when execution begins
                     yield _format_sse(
@@ -574,48 +642,167 @@ class AIMEPlanner:
                     )
 
                     try:
-                        # Build prompt with context
-                        task_message = spec.description
-                        if spec.context:
-                            context_str = "\n".join(
-                                f"[{k}]: {v}" for k, v in spec.context.items()
-                            )
-                            task_message = f"{spec.description}\n\n## Context from previous tasks:\n{context_str}"
+                        # Build prompt with context from ContextManager
+                        # Apply TASK_INSTRUCTION_TEMPLATE to instruct agent to declare failures
+                        task_message = TASK_INSTRUCTION_TEMPLATE.format(
+                            description=spec.description
+                        )
+                        if context_str:
+                            task_message = f"{task_message}\n\n## 上下文信息（来自前置任务的输出）\n\n{context_str}\n\n## 注意\n请基于上述上下文信息完成当前任务，不要要求用户重新提供这些数据。"
 
                         # Execute and collect output with task_id for tool call association
                         result_text = ""
                         async for event in self._execute_actor(
-                            actor, task_message, thread_id, event_id, task_id=spec.id
+                            actor, task_message, thread_id, event_id,
+                            task_id=spec.id,
+                            user_id=self._current_user_id,
                         ):
                             event_id += 1
-                            yield event
-                            # Collect text output for context passing
+                            # Convert text_delta to task_output (associate with specific task)
                             if event.get("event") == "text_delta":
                                 data = json.loads(event.get("data", "{}"))
-                                result_text += data.get("text", "")
+                                text_chunk = data.get("text", "")
+                                result_text += text_chunk
+                                # Emit task_output instead of text_delta
+                                yield _format_sse(
+                                    "task_output",
+                                    {
+                                        "task_id": spec.id,
+                                        "text": text_chunk,
+                                    },
+                                    event_id,
+                                )
+                            else:
+                                # Forward other events (tool_call, etc.) as-is
+                                yield event
 
-                        # Complete task
+                        # Check for explicit task failure marker in output
                         duration_ms = int((time.time() - start_time) * 1000)
-                        self.progress_manager.complete_task(spec.id, result_text)
-                        results[spec.id] = result_text
-                        logger.info(
-                            f"[task:{spec.id[:8]}] Completed - duration_ms={duration_ms}, "
-                            f"result_len={len(result_text)}"
-                        )
+                        fail_reason = self._extract_fail_reason(result_text)
 
-                        yield _format_sse(
-                            "task_completed",
-                            {
-                                "task_id": spec.id,
-                                "status": "success",
-                                "duration_ms": duration_ms,
-                            },
-                            event_id,
-                        )
-                        event_id += 1
+                        if fail_reason:
+                            # Task explicitly declared failure
+                            logger.warning(
+                                f"[task:{spec.id[:8]}] Failed with reason: {fail_reason}"
+                            )
+                            self.progress_manager.fail_task(spec.id, fail_reason)
+
+                            yield _format_sse(
+                                "task_completed",
+                                {
+                                    "task_id": spec.id,
+                                    "status": "failed",
+                                    "error": fail_reason,
+                                    "duration_ms": duration_ms,
+                                },
+                                event_id,
+                            )
+                            event_id += 1
+
+                            # Check if we should trigger intelligent replanning (max 1 time)
+                            if not getattr(self, "_has_replanned", False):
+                                self._has_replanned = True
+
+                                yield _format_sse(
+                                    "thinking",
+                                    {
+                                        "content": f"任务失败: {fail_reason}\n正在重新规划替代方案...",
+                                        "type": "replanning",
+                                    },
+                                    event_id,
+                                )
+                                event_id += 1
+
+                                # Get remaining pending tasks
+                                remaining = [
+                                    self.progress_manager.progress.get_spec(tid)
+                                    for tid, item in self.progress_manager.progress.items.items()
+                                    if item.status == "pending"
+                                ]
+                                remaining = [s for s in remaining if s is not None]
+
+                                # Call LLM to replan
+                                new_specs = await self._replan_from_failure(
+                                    original_message=message,
+                                    failed_spec=spec,
+                                    fail_reason=fail_reason,
+                                    completed_results=results,
+                                    remaining_specs=remaining,
+                                )
+
+                                if new_specs:
+                                    # Cancel original remaining tasks
+                                    for remaining_spec in remaining:
+                                        self.progress_manager.progress.mark_cancelled(
+                                            remaining_spec.id
+                                        )
+                                        yield _format_sse(
+                                            "task_completed",
+                                            {
+                                                "task_id": remaining_spec.id,
+                                                "status": "cancelled",
+                                            },
+                                            event_id,
+                                        )
+                                        event_id += 1
+
+                                    # Add new tasks from replanning
+                                    for new_spec in new_specs:
+                                        self.progress_manager.add_task(new_spec)
+                                        try:
+                                            new_actor = self.actor_factory.select_actor(
+                                                new_spec
+                                            )
+                                            task_actors[new_spec.id] = new_actor
+
+                                            yield _format_sse(
+                                                "task_spawned",
+                                                {
+                                                    "task_id": new_spec.id,
+                                                    "subagent_type": new_actor.name,
+                                                    "description": new_spec.description[:200],
+                                                    "status": "pending",
+                                                    "is_replan": True,
+                                                },
+                                                event_id,
+                                            )
+                                            event_id += 1
+                                        except Exception as actor_err:
+                                            logger.error(
+                                                f"Failed to select actor for replan task: {actor_err}"
+                                            )
+                        else:
+                            # Task completed successfully
+                            self.progress_manager.complete_task(spec.id, result_text)
+                            results[spec.id] = result_text
+
+                            # Store result in ContextManager for downstream tasks (T015)
+                            await self.context_manager.store(
+                                context_id=spec.id,
+                                thread_id=thread_id,
+                                content=result_text,
+                                expected_output=spec.expected_output,
+                                metadata={"actor": actor.name, "duration_ms": duration_ms},
+                            )
+
+                            logger.info(
+                                f"[task:{spec.id[:8]}] Completed - duration_ms={duration_ms}, "
+                                f"result_len={len(result_text)}"
+                            )
+
+                            yield _format_sse(
+                                "task_completed",
+                                {
+                                    "task_id": spec.id,
+                                    "status": "success",
+                                    "duration_ms": duration_ms,
+                                },
+                                event_id,
+                            )
+                            event_id += 1
 
                     except Exception as e:
-                        logger.exception(f"Task {spec.id} failed: {e}")
+                        logger.exception(f"Task {spec.id} failed with exception: {e}")
                         self.progress_manager.fail_task(spec.id, str(e))
 
                         # Check if we should retry with re-planning
@@ -686,21 +873,39 @@ class AIMEPlanner:
 ```json
 [
   {{
+    "id": "step_1",
     "description": "子任务1的中文描述",
     "capabilities": ["capability1"],
-    "depends_on": []
+    "depends_on": [],
+    "expected_input": [],
+    "expected_output": ["output_type1", "output_type2"]
   }},
   {{
+    "id": "step_2",
     "description": "子任务2的中文描述",
     "capabilities": ["capability2"],
-    "depends_on": [0]
+    "depends_on": ["step_1"],
+    "expected_input": ["output_type1"],
+    "expected_output": ["output_type3"]
   }}
 ]
 ```
 
-规则：
-- 每个子任务应可独立执行
-- 使用 depends_on 引用前面任务的索引（从0开始）
+## 输出类型选项
+- financial_report: 财务报告、财报数据
+- revenue_data: 营收数据、销售数据
+- table: 表格数据
+- chart: 图表
+- code: 代码片段
+- analysis_report: 分析报告
+- summary: 摘要总结
+- file: 生成的文件
+- raw_data: 原始数据
+
+## 规则
+- 每个任务必须有唯一的 id（如 step_1, step_2, step_3...）
+- 使用 depends_on 引用前面任务的 id（如 ["step_1"]）
+- **如果任务 B 需要任务 A 的输出，必须设置 depends_on 并声明 expected_input**
 - 能力类型: "web_search", "database", "code_execution", "file_generation"
 - **描述必须使用中文**
 - 最多5个子任务
@@ -728,24 +933,32 @@ class AIMEPlanner:
 
             # Convert to SubtaskSpecs
             specs: list[SubtaskSpec] = []
-            id_map: dict[int, str] = {}
+            id_map: dict[str, str] = {}  # step_id -> uuid
 
-            for i, task_data in enumerate(subtasks_data[:5]):  # Max 5 subtasks
-                task_id = str(uuid4())
-                id_map[i] = task_id
+            for task_data in subtasks_data[:5]:  # Max 5 subtasks
+                # Get step_id from LLM response, fallback to generated id
+                step_id = task_data.get("id", f"step_{len(id_map) + 1}")
+                task_uuid = str(uuid4())
+                id_map[step_id] = task_uuid
 
-                # Convert index dependencies to task IDs
+                # Convert string id dependencies to task UUIDs
                 depends_on = []
-                for dep_idx in task_data.get("depends_on", []):
-                    if dep_idx in id_map:
-                        depends_on.append(id_map[dep_idx])
+                for dep_id in task_data.get("depends_on", []):
+                    # Ensure dep_id is string for consistent lookup
+                    dep_id_str = str(dep_id)
+                    if dep_id_str in id_map:
+                        depends_on.append(id_map[dep_id_str])
+                    else:
+                        logger.warning(f"[_decompose_task] Unknown dependency: {dep_id}")
 
                 specs.append(
                     SubtaskSpec(
-                        id=task_id,
+                        id=task_uuid,
                         description=task_data.get("description", ""),
                         capabilities=task_data.get("capabilities", []),
                         depends_on=depends_on,
+                        expected_input=task_data.get("expected_input", []),
+                        expected_output=task_data.get("expected_output", []),
                     )
                 )
 
@@ -759,26 +972,69 @@ class AIMEPlanner:
     async def _generate_summary(
         self, original_task: str, results: dict[str, Any]
     ) -> str:
-        """Generate a summary of completed subtasks.
+        """Generate a clean summary using LLM aggregation, preserving file download links.
 
         Args:
             original_task: Original user request
             results: Dict of task_id to result
 
         Returns:
-            Summary text
+            Summary text with file links appended
         """
+        import re
+
         if not results:
             return "没有可用的结果。"
 
-        # Simple summary: list all results
-        summary_parts = []
-        for i, (task_id, result) in enumerate(results.items(), 1):
-            if result:
-                preview = str(result)[:500]
-                summary_parts.append(f"**子任务 {i}**: {preview}")
+        # Extract all file download links
+        file_links: list[str] = []
+        file_pattern = r'\[.*?下载.*?\]\(/api/files/[^)]+\)'
 
-        return "\n\n".join(summary_parts) if summary_parts else "所有子任务已完成。"
+        # Build context for LLM
+        context_parts = []
+        for i, (_, result) in enumerate(results.items(), 1):
+            if result:
+                result_str = str(result)
+                # Extract file links
+                links = re.findall(file_pattern, result_str)
+                file_links.extend(links)
+                # Add task result (remove file links to avoid duplication)
+                clean_result = re.sub(file_pattern, '[文件已生成]', result_str)
+                context_parts.append(f"子任务{i}结果:\n{clean_result[:1000]}")
+
+        summary_prompt = f"""\
+基于以下子任务的执行结果，为用户生成一个简洁、结构化的最终回答。
+
+## 原始任务
+{original_task}
+
+## 子任务执行结果
+{chr(10).join(context_parts)}
+
+## 要求
+- 直接回答用户的问题
+- 不要提及"子任务"或执行过程
+- 使用 markdown 格式
+- 简洁明了，突出关键信息
+- 如果有数据或发现，用结构化方式呈现
+"""
+
+        try:
+            messages = [SystemMessage(content=summary_prompt)]
+            response = await self._model.ainvoke(messages)
+            summary = str(response.content)
+        except Exception as e:
+            logger.warning(f"LLM summary generation failed: {e}")
+            # Fallback to simple summary
+            summary = "任务执行完成。"
+
+        # Append file download links at the end
+        if file_links:
+            summary += "\n\n---\n\n**生成的文件:**\n\n"
+            for link in file_links:
+                summary += f"- {link}\n"
+
+        return summary
 
     def _expand_workflow_skill(self, skill_name: str, message: str) -> list[SubtaskSpec]:
         """Expand a workflow skill into SubtaskSpecs based on its steps.
@@ -927,3 +1183,208 @@ If no alternative is possible, return:
         except Exception as e:
             logger.warning(f"Failed to create alternative subtask: {e}")
             return None
+
+    def _extract_fail_reason(self, result_text: str) -> str:
+        """Extract failure reason from task output.
+
+        Looks for the [TASK_FAILED] marker and extracts the reason.
+
+        Args:
+            result_text: The task output text
+
+        Returns:
+            Failure reason string, or empty string if no failure detected
+        """
+        if TASK_FAILED_MARKER not in result_text:
+            return ""
+
+        # Extract content after the marker
+        after_marker = result_text.split(TASK_FAILED_MARKER, 1)[1]
+        first_line = after_marker.strip().split("\n")[0]
+
+        # Check if it starts with "原因:" and extract the reason
+        if first_line.startswith("原因:"):
+            return first_line[3:].strip()
+
+        # Otherwise return the first line (up to 200 chars)
+        return first_line[:200].strip()
+
+    async def _replan_from_failure(
+        self,
+        original_message: str,
+        failed_spec: SubtaskSpec,
+        fail_reason: str,
+        completed_results: dict[str, str],
+        remaining_specs: list[SubtaskSpec],
+    ) -> list[SubtaskSpec]:
+        """Replan tasks based on failure reason using LLM.
+
+        When a task fails, this method uses the LLM to generate a new
+        set of tasks that can achieve the original goal using a different
+        approach.
+
+        Args:
+            original_message: User's original request
+            failed_spec: The failed task specification
+            fail_reason: Reason for the failure
+            completed_results: Results from already completed tasks {task_id: result}
+            remaining_specs: Remaining pending tasks that haven't been executed
+
+        Returns:
+            List of new SubtaskSpecs to replace the failed and remaining tasks
+        """
+        # Build context for completed tasks
+        completed_context = ""
+        if completed_results:
+            completed_lines = []
+            for tid in completed_results.keys():
+                item = self.progress_manager.progress.items.get(tid)
+                if item:
+                    desc = item.description[:50] + ("..." if len(item.description) > 50 else "")
+                    completed_lines.append(f"- 已完成: {desc}")
+            completed_context = "\n".join(completed_lines)
+
+        # Build context for remaining tasks
+        remaining_context = ""
+        if remaining_specs:
+            remaining_lines = []
+            for s in remaining_specs:
+                desc = s.description[:50] + ("..." if len(s.description) > 50 else "")
+                remaining_lines.append(f"- 待执行: {desc}")
+            remaining_context = "\n".join(remaining_lines)
+
+        replan_prompt = f"""\
+你是一个任务规划专家。之前的任务执行失败了，请根据失败原因重新规划。
+
+## 用户原始请求
+{original_message}
+
+## 失败的任务
+{failed_spec.description}
+
+## 失败原因
+{fail_reason}
+
+## 已完成的任务
+{completed_context or "无"}
+
+## 原计划剩余任务
+{remaining_context or "无"}
+
+## 核心原则：降级策略（Graceful Degradation）
+
+当无法获取理想数据时，**必须采用降级方案而非重复尝试相同方式**：
+
+### 数据获取降级路径：
+1. **特定 API/数据库** → **网络搜索公开信息**
+2. **实时数据** → **历史数据/年报数据**
+3. **精确数据** → **公开数据集/行业报告**
+4. **完整数据** → **部分可获取的数据 + 说明数据限制**
+
+### 关键要求：
+- **不要重复尝试已失败的方法**（如网络搜索失败，不要再次尝试网络搜索相同内容）
+- **使用可获取的信息完成任务**，即使信息不完整
+- **在最终输出中说明数据来源和限制**，而非因数据不足而失败
+- **必须包含最终输出任务**（如PPT、报告等）
+
+### 示例降级：
+- "获取特斯拉实时财务数据" 失败 → 改为 "基于公开年报和新闻分析特斯拉财务状况"
+- "查询数据库获取销售数据" 失败 → 改为 "使用公开数据集或行业报告估算"
+- "获取精确股价" 失败 → 改为 "使用最近可获取的历史数据进行分析"
+
+返回 JSON 数组，格式同原任务分解：
+```json
+[
+  {{
+    "id": "step_1",
+    "description": "新任务描述（中文）- 明确说明使用的降级方案",
+    "capabilities": ["web_search"],
+    "depends_on": [],
+    "expected_output": ["output_type"]
+  }},
+  {{
+    "id": "step_2",
+    "description": "后续任务描述",
+    "capabilities": ["file_generation"],
+    "depends_on": ["step_1"],
+    "expected_output": ["file"]
+  }}
+]
+```
+
+## 输出类型选项
+- financial_report: 财务报告、财报数据
+- revenue_data: 营收数据、销售数据
+- table: 表格数据
+- chart: 图表
+- code: 代码片段
+- analysis_report: 分析报告
+- summary: 摘要总结
+- file: 生成的文件（如 PPT、PDF、Excel 等）
+- raw_data: 原始数据
+
+注意：
+- 每个任务必须有唯一的 id（如 step_1, step_2, step_3...）
+- depends_on 使用任务的 id 引用（如 ["step_1"]）
+- **必须包含原计划中的最终输出任务**
+- **使用不同于失败任务的方法**
+"""
+
+        messages = [SystemMessage(content=replan_prompt)]
+
+        logger.info(
+            f"[_replan_from_failure] Calling LLM for replanning - "
+            f"fail_reason='{fail_reason[:50]}...'"
+        )
+
+        try:
+            response = await self._model.ainvoke(messages)
+            content = response.content if hasattr(response, "content") else str(response)
+            result_text = str(content) if not isinstance(content, str) else content
+
+            # Parse JSON
+            json_str = result_text
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+
+            new_tasks_data = json.loads(json_str.strip())
+
+            # Convert to SubtaskSpec
+            new_specs: list[SubtaskSpec] = []
+            id_map: dict[str, str] = {}  # step_id -> uuid
+
+            for task_data in new_tasks_data[:5]:  # Max 5 tasks
+                # Get step_id from LLM response, fallback to generated id
+                step_id = task_data.get("id", f"step_{len(id_map) + 1}")
+                task_uuid = str(uuid4())
+                id_map[step_id] = task_uuid
+
+                # Convert string id dependencies to task UUIDs
+                depends_on = []
+                for dep_id in task_data.get("depends_on", []):
+                    # Ensure dep_id is string for consistent lookup
+                    dep_id_str = str(dep_id)
+                    if dep_id_str in id_map:
+                        depends_on.append(id_map[dep_id_str])
+                    else:
+                        logger.warning(f"[_replan_from_failure] Unknown dependency: {dep_id}")
+
+                new_specs.append(
+                    SubtaskSpec(
+                        id=task_uuid,
+                        description=task_data.get("description", ""),
+                        capabilities=task_data.get("capabilities", []),
+                        depends_on=depends_on,
+                        expected_output=task_data.get("expected_output", []),
+                        is_replan=True,  # Mark as replanned task
+                    )
+                )
+
+            logger.info(f"[_replan_from_failure] Generated {len(new_specs)} new tasks")
+            return new_specs
+
+        except Exception as e:
+            logger.error(f"[_replan_from_failure] Failed: {e}")
+            return []

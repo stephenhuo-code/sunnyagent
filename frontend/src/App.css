@@ -1313,6 +1313,11 @@ body {
   color: var(--error);
 }
 
+.task-icon.cancelled {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
 .task-icon.spinning {
   animation: spin 1s linear infinite;
 }
@@ -1346,6 +1351,25 @@ body {
 
 .spawned-task.error {
   border-left: 3px solid var(--error);
+}
+
+.spawned-task.failed {
+  border-left: 3px solid var(--error);
+}
+
+.spawned-task.cancelled {
+  border-left: 3px solid var(--text-dim);
+  opacity: 0.5;
+}
+
+.spawned-task.cancelled .task-description {
+  text-decoration: line-through;
+}
+
+.cancelled-tasks {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
 }
 
 .spawned-task-header {
@@ -1391,6 +1415,76 @@ body {
   padding: 8px 12px;
   background: var(--bg-hover);
   animation: expandIn 0.2s ease-out;
+}
+
+/* Task todos inside expanded spawned task */
+.spawned-task-todos {
+  padding: 8px 12px 8px 28px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-hover);
+  animation: expandIn 0.2s ease-out;
+}
+
+.spawned-task-todos .task-item {
+  padding: 4px 0;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.spawned-task-todos .task-item:not(:last-child) {
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+/* Task output inside expanded task */
+.task-output {
+  padding: 12px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 300px;
+  overflow-y: auto;
+  animation: expandIn 0.2s ease-out;
+}
+
+.task-output p {
+  margin-bottom: 8px;
+}
+
+.task-output p:last-child {
+  margin-bottom: 0;
+}
+
+.task-output pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.task-output code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+}
+
+.task-output ul, .task-output ol {
+  padding-left: 20px;
+  margin-bottom: 8px;
+}
+
+.task-output a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.task-output a:hover {
+  text-decoration: underline;
 }
 
 @keyframes expandIn {

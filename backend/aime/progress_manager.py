@@ -220,27 +220,6 @@ class ProgressManager:
         """
         return self._progress.get_results()
 
-    def get_context_for_task(self, spec: SubtaskSpec) -> dict[str, Any]:
-        """Get context from completed dependencies.
-
-        Collects results from all tasks in spec.depends_on.
-
-        Args:
-            spec: Subtask specification
-
-        Returns:
-            Context dict with dependency results
-        """
-        context: dict[str, Any] = {}
-
-        for dep_id in spec.depends_on:
-            if dep_id in self._progress.items:
-                item = self._progress.items[dep_id]
-                if item.status == "completed" and item.result is not None:
-                    context[dep_id] = item.result
-
-        return context
-
     def to_todos(self) -> list[dict[str, str]]:
         """Convert progress to todos format for SSE.
 

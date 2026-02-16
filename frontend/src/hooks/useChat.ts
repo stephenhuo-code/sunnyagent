@@ -217,19 +217,40 @@ export function useChat(options: UseChatOptions = {}) {
               break;
 
             case "todos_updated": {
-              console.log(`[TODOS_UPDATED] count=${event.data.todos.length}`, event.data.todos);
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        // Upgrade to planning scenario when we receive todos
-                        displayScenario: "planning" as DisplayScenario,
-                        todos: event.data.todos,
-                      }
-                    : m,
-                ),
-              );
+              const { todos, task_id } = event.data;
+              console.log(`[TODOS_UPDATED] count=${todos.length}, task_id=${task_id}`, todos);
+
+              if (task_id) {
+                // Has task_id: associate todos with the corresponding spawnedTask
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          spawnedTasks: m.spawnedTasks?.map((task) =>
+                            task.task_id === task_id
+                              ? { ...task, todos }
+                              : task
+                          ),
+                        }
+                      : m,
+                  ),
+                );
+              } else {
+                // No task_id: store at top level (keep original behavior)
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          // Upgrade to planning scenario when we receive todos
+                          displayScenario: "planning" as DisplayScenario,
+                          todos,
+                        }
+                      : m,
+                  ),
+                );
+              }
               break;
             }
 
@@ -289,6 +310,28 @@ export function useChat(options: UseChatOptions = {}) {
                                 ...task,
                                 status: event.data.status,
                                 duration_ms: event.data.duration_ms,
+                              }
+                            : task
+                        ),
+                      }
+                    : m,
+                ),
+              );
+              break;
+            }
+
+            case "task_output": {
+              // Append task output to the corresponding spawned task (not to main content)
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        spawnedTasks: (m.spawnedTasks ?? []).map((task) =>
+                          task.task_id === event.data.task_id
+                            ? {
+                                ...task,
+                                output: (task.output || "") + event.data.text,
                               }
                             : task
                         ),

@@ -38,6 +38,9 @@ class SubtaskSpec:
         capabilities: Required capabilities for agent matching
         depends_on: List of task IDs that must complete first
         context: Context data from dependent tasks
+        expected_input: Expected input types for I/O validation
+        expected_output: Expected output types for I/O validation
+        is_replan: Flag indicating if this task was generated from replanning
     """
 
     id: str = field(default_factory=lambda: str(uuid4()))
@@ -48,6 +51,11 @@ class SubtaskSpec:
     capabilities: list[str] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
     context: dict[str, Any] | None = None
+    # I/O declaration for context management
+    expected_input: list[str] = field(default_factory=list)
+    expected_output: list[str] = field(default_factory=list)
+    # Flag indicating if this task was generated from replanning
+    is_replan: bool = False
 
 
 # =============================================================================

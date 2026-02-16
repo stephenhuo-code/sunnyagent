@@ -22,9 +22,11 @@ export interface SpawnedTask {
   task_id: string;
   subagent_type: string;
   description: string;
-  status: "pending" | "running" | "success" | "error";
+  status: "pending" | "running" | "success" | "error" | "failed" | "cancelled";
   duration_ms?: number;
   toolCalls: ToolCall[];
+  output?: string;  // Task output content (collected from task_output events)
+  todos?: Todo[];   // Agent internal todos associated with this task
 }
 
 /** Individual thinking step with type categorization */
@@ -51,10 +53,11 @@ export type SSEEvent =
   | { event: "thinking"; data: { type?: "planning" | "replanning" | "routing"; content: string } }
   | { event: "error"; data: { message: string } }
   | { event: "done"; data: Record<string, never> }
-  | { event: "todos_updated"; data: { todos: Todo[]; timestamp: string } }
+  | { event: "todos_updated"; data: { todos: Todo[]; timestamp: string; task_id?: string } }
   | { event: "task_spawned"; data: { task_id: string; subagent_type: string; description: string; status?: "pending" | "running" } }
   | { event: "task_started"; data: { task_id: string } }
-  | { event: "task_completed"; data: { task_id: string; duration_ms: number; status: "success" | "error" } };
+  | { event: "task_completed"; data: { task_id: string; duration_ms?: number; status: "success" | "error" | "failed" | "cancelled" } }
+  | { event: "task_output"; data: { task_id: string; text: string } };
 
 /** A tool call with its current status */
 export interface ToolCall {

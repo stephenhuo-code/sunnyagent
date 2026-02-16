@@ -224,6 +224,7 @@ async def stream_agent_response(
                                                 if isinstance(t, dict)
                                             ],
                                             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                            "task_id": current_task_id,  # Associate todos with current task
                                         },
                                         event_counter,
                                     )
