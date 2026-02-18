@@ -1,0 +1,61 @@
+Date : 2026-02-17 21:49:40
+Directory : /Users/yanwen/Documents/github/sunnyagent
+Total : 22 files,  1022 codes, 85 comments, 147 blanks, all 1254 lines
+
+Languages
++----------------+------------+------------+------------+------------+------------+
+| language       | files      | code       | comment    | blank      | total      |
++----------------+------------+------------+------------+------------+------------+
+| PostCSS        |          1 |        415 |         18 |         81 |        514 |
+| TypeScript JSX |          7 |        386 |         30 |         35 |        451 |
+| TypeScript     |          7 |        127 |         16 |         17 |        160 |
+| Python         |          7 |         94 |         21 |         14 |        129 |
++----------------+------------+------------+------------+------------+------------+
+
+Directories
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                            | files      | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                               |         22 |      1,022 |         85 |        147 |      1,254 |
+| backend                                                                                         |          7 |         94 |         21 |         14 |        129 |
+| backend (Files)                                                                                 |          1 |          6 |          1 |          0 |          7 |
+| backend/conversations                                                                           |          3 |         20 |          3 |          1 |         24 |
+| backend/projects                                                                                |          3 |         68 |         17 |         13 |         98 |
+| frontend                                                                                        |         15 |        928 |         64 |        133 |      1,125 |
+| frontend/src                                                                                    |         15 |        928 |         64 |        133 |      1,125 |
+| frontend/src (Files)                                                                            |          1 |         46 |          9 |          7 |         62 |
+| frontend/src/api                                                                                |          2 |         39 |          4 |          4 |         47 |
+| frontend/src/components                                                                         |          8 |        756 |         39 |        109 |        904 |
+| frontend/src/components (Files)                                                                 |          1 |         17 |          3 |          1 |         21 |
+| frontend/src/components/Projects                                                                |          7 |        739 |         36 |        108 |        883 |
+| frontend/src/hooks                                                                              |          4 |         87 |         12 |         13 |        112 |
++-------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++-------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| filename                                                                                        | language       | code       | comment    | blank      | total      |
++-------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/database.py                     | Python         |         11 |          2 |          0 |         13 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/models.py                       | Python         |          1 |          0 |          0 |          1 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/router.py                       | Python         |          8 |          1 |          1 |         10 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/main.py                                       | Python         |          6 |          1 |          0 |          7 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/database.py                          | Python         |         34 |         11 |          5 |         50 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/models.py                            | Python         |          4 |          1 |          3 |          8 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/router.py                            | Python         |         30 |          5 |          5 |         40 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/App.tsx                                  | TypeScript JSX |         46 |          9 |          7 |         62 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/api/conversations.ts                     | TypeScript     |         13 |          1 |          3 |         17 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/api/projects.ts                          | TypeScript     |         26 |          3 |          1 |         30 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/ChatContainer.tsx             | TypeScript JSX |         17 |          3 |          1 |         21 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectHome.tsx      | TypeScript JSX |        203 |          9 |         17 |        229 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectItem.tsx      | TypeScript JSX |          5 |          4 |          1 |         10 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectList.tsx      | TypeScript JSX |          4 |          0 |          0 |          4 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectWorkspace.tsx | TypeScript JSX |          9 |          1 |          0 |         10 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/Projects.css         | PostCSS        |        415 |         18 |         81 |        514 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/SourcesPanel.tsx     | TypeScript JSX |        102 |          4 |          9 |        115 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/index.ts             | TypeScript     |          1 |          0 |          0 |          1 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useChat.ts                         | TypeScript     |          9 |          2 |          1 |         12 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useConversations.ts                | TypeScript     |          8 |          3 |          1 |         12 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useProjects.ts                     | TypeScript     |         48 |          4 |          5 |         57 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useSkills.ts                       | TypeScript     |         22 |          3 |          6 |         31 |
+| Total                                                                                           |                |      1,022 |         85 |        147 |      1,254 |
++-------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+

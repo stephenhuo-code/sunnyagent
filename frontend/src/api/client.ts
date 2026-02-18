@@ -13,11 +13,15 @@ export async function* streamChat(
   agent?: string,
   skill?: string,
   fileIds?: string[],
+  projectFileIds?: string[],
+  projectId?: string,
 ): AsyncGenerator<SSEEvent> {
   const body: Record<string, unknown> = { thread_id: threadId, message };
   if (agent) body.agent = agent;
   if (skill) body.skill = skill;
   if (fileIds && fileIds.length > 0) body.file_ids = fileIds;
+  if (projectFileIds && projectFileIds.length > 0) body.project_file_ids = projectFileIds;
+  if (projectId) body.project_id = projectId;
 
   const response = await fetch("/api/chat", {
     method: "POST",

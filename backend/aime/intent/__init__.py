@@ -1,9 +1,8 @@
 """Intent Analysis Module.
 
 Provides intent classification through a chain of classifiers:
-1. RuleBasedClassifier: Explicit routing patterns [ROUTE_TO: xxx]
-2. KeywordClassifier: Quick pattern matching
-3. LLMClassifier: Deep semantic analysis (fallback)
+1. RuleBasedClassifier (priority=0): Explicit routing patterns [ROUTE_TO: xxx]
+2. LLMClassifier (priority=10): Semantic analysis with context awareness
 """
 
 from backend.aime.intent.analyzer import IntentAnalyzer

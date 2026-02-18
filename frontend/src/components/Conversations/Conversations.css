@@ -257,3 +257,62 @@
   background: var(--bg-hover);
   color: var(--text);
 }
+
+/* Project Menu for Conversations */
+.project-menu-container {
+  position: relative;
+}
+
+.action-btn.project-btn:hover {
+  background: var(--user-bg);
+  color: var(--accent);
+}
+
+.conversation-project-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.conversation-project-menu-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.conversation-project-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.conversation-project-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.conversation-project-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.conversation-project-menu-item .spin {
+  animation: spin 1s linear infinite;
+}

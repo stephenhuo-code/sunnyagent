@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { createThread, streamChat, getThreadHistory } from "../api/client";
 import type { Message, ThinkingState, ToolCall, UploadedFile, DisplayScenario, SpawnedTask } from "../types";
 
@@ -23,6 +23,7 @@ function parseSkillCommand(text: string): { skill: string | null; message: strin
 
 interface UseChatOptions {
   initialThreadId?: string | null;
+  onConversationCreated?: () => void;
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -30,15 +31,22 @@ export function useChat(options: UseChatOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(options.initialThreadId ?? null);
   const abortRef = useRef<AbortController | null>(null);
+  const onConversationCreatedRef = useRef(options.onConversationCreated);
+
+  // Keep ref up to date when callback changes
+  useEffect(() => {
+    onConversationCreatedRef.current = options.onConversationCreated;
+  }, [options.onConversationCreated]);
 
   const sendMessage = useCallback(
-    async (text: string, agent?: string, uploadedFiles?: UploadedFile[]) => {
+    async (text: string, agent?: string, uploadedFiles?: UploadedFile[], projectFileIds?: string[], projectId?: string) => {
       if (isStreaming) return;
       // Allow sending with files even if text is empty
       if (!text.trim() && (!uploadedFiles || uploadedFiles.length === 0)) return;
 
       // Create thread on first message
       let currentThreadId = threadId;
+      const isFirstMessage = !currentThreadId;
       if (!currentThreadId) {
         currentThreadId = await createThread();
         setThreadId(currentThreadId);
@@ -90,7 +98,7 @@ export function useChat(options: UseChatOptions = {}) {
       abortRef.current = controller;
 
       // Collect file IDs to send
-      const fileIds = uploadedFiles?.map(f => f.file_id);
+      const uploadedFileIds = uploadedFiles?.map(f => f.file_id) ?? [];
 
       try {
         for await (const event of streamChat(
@@ -99,7 +107,9 @@ export function useChat(options: UseChatOptions = {}) {
           controller.signal,
           agent,
           skill ?? undefined,
-          fileIds,
+          uploadedFileIds.length > 0 ? uploadedFileIds : undefined,
+          projectFileIds && projectFileIds.length > 0 ? projectFileIds : undefined,
+          projectId,
         )) {
           console.log(`[CHAT_EVENT] event=${event.event}`, event.data);
           switch (event.event) {
@@ -399,6 +409,10 @@ export function useChat(options: UseChatOptions = {}) {
       } finally {
         setIsStreaming(false);
         abortRef.current = null;
+        // Notify parent when first message sent (conversation created)
+        if (isFirstMessage && onConversationCreatedRef.current) {
+          onConversationCreatedRef.current();
+        }
       }
     },
     [isStreaming, threadId],

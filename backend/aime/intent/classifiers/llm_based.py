@@ -15,52 +15,63 @@ logger = logging.getLogger(__name__)
 
 
 _CLASSIFIER_PROMPT = """\
-You are an intent classifier for a multi-agent AI system. Analyze the user's message and determine the appropriate action.
+你是一个多智能体 AI 系统的意图分类器。分析用户消息和上下文，决定合适的处理动作。
 
-## Available Actions
+## 上下文感知
 
-1. **direct_reply**: For simple questions, greetings, or queries that can be answered directly
-   - Examples: "你好", "1+1=?", "什么是Python?", "谢谢"
+注意消息中的上下文线索：
+- "用户选择了文件: 「xxx」" 表示用户选择了文件
+- "用户在项目「xxx」中工作" 表示用户在某个项目中
 
-2. **delegate**: For tasks that should be handled by a specialist agent
-   - Web search, news, research → capabilities: ["web_search"]
-   - Database queries, SQL → capabilities: ["database", "sql_query"]
-   - Code execution, file generation → capabilities: ["code_execution"]
+## 可用动作
 
-3. **plan**: For complex, multi-step tasks that need decomposition
-   - Multiple steps mentioned
-   - Multiple outputs required
-   - Cross-domain tasks
+1. **direct_reply**: 简单问题，可以直接回答
+   - 问候语：你好、hello、hi
+   - 简单数学：1+1=?
+   - 基础事实问题：什么是Python?
+   - 确认回复：谢谢、好的
 
-4. **clarify**: When the user's intent is unclear (confidence < 0.5)
-   - Provide specific clarification questions
+2. **delegate**: 需要专业代理处理的任务
+   - 网络搜索、新闻、时事 → capabilities: ["web_search"]
+   - 数据库查询、SQL、数据分析 → capabilities: ["database", "sql_query"]
+   - **文件读取、文档分析** → capabilities: ["file_processing"]
+   - 代码执行、文件生成 → capabilities: ["code_execution"]
 
-## Response Format
+   **重要**: 如果消息中包含"用户选择了文件"，则任何与文件相关的问题都应使用 capabilities: ["file_processing"]
 
-Respond with a JSON object:
+3. **plan**: 复杂的多步骤任务，需要分解执行
+   - 包含多个步骤（并且、然后、接着）
+   - 需要多个输出
+   - 跨领域任务（搜索...然后分析...）
+
+4. **clarify**: 用户意图真的不清楚时（置信度 < 0.4）
+   - 提供 1-2 个具体的澄清问题
+   - 仅在绝对必要时使用
+
+## 响应格式
+
+返回 JSON 对象：
 ```json
 {
   "action": "direct_reply|delegate|plan|clarify",
   "confidence": 0.0-1.0,
-  "capabilities": ["capability1", "capability2"],
-  "reasoning": "Brief explanation",
-  "clarify_questions": ["Question 1", "Question 2"]
+  "capabilities": ["capability1"],
+  "reasoning": "简要说明"
 }
 ```
 
-Only include clarify_questions when action is "clarify".
-Only include capabilities when action is "delegate".
+仅当 action 为 "delegate" 时包含 capabilities。
+仅当 action 为 "clarify" 时包含 clarify_questions。
 """
 
 
 class LLMClassifier(ClassifierBase):
     """LLM-based classifier for semantic intent analysis.
 
-    Uses an LLM to analyze user messages when simpler classifiers
-    cannot determine intent. This is the fallback classifier with
-    the lowest priority.
+    Uses an LLM to analyze user messages with context awareness.
+    Handles all intent classification after rule-based routing.
 
-    Priority: 20 (after rule-based and keyword-based)
+    Priority: 10 (after rule-based)
     """
 
     def __init__(self, model=None):
@@ -77,7 +88,7 @@ class LLMClassifier(ClassifierBase):
 
     @property
     def priority(self) -> int:
-        return 20
+        return 10
 
     async def classify(
         self,

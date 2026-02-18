@@ -120,3 +120,40 @@ export interface Message {
   /** Spawned sub-agent tasks */
   spawnedTasks?: SpawnedTask[];
 }
+
+// =============================================================================
+// Project Management Types
+// =============================================================================
+
+/** Project summary for list display */
+export interface Project {
+  id: string;
+  name: string;
+  file_count: number;
+  conversation_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** File in a project */
+export interface ProjectFile {
+  id: string;
+  file_id: string;
+  original_name: string;
+  content_type: string | null;
+  size_bytes: number;
+  created_at: string;
+  download_url: string;
+  /** UI state: selected for chat context */
+  selected?: boolean;
+}
+
+/** Uploading file state */
+export interface UploadingProjectFile {
+  id: string;
+  file: File;
+  progress: number;
+  status: "uploading" | "completed" | "error";
+  projectFile?: ProjectFile;
+  error?: string;
+}

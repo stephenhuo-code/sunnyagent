@@ -11,6 +11,8 @@ class ChatRequest(BaseModel):
     agent: str | None = None  # Explicit agent routing (skips supervisor)
     skill: str | None = None  # Explicit skill invocation (uses general agent)
     file_ids: list[str] | None = None  # Uploaded file IDs to include in message
+    project_file_ids: list[str] | None = None  # Project file IDs as context
+    project_id: str | None = None  # Project ID for project file context
 
 
 class ThreadCreate(BaseModel):

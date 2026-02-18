@@ -1,0 +1,109 @@
+Date : 2026-02-17 14:25:06
+Directory : /Users/yanwen/Documents/github/sunnyagent
+Total : 50 files,  6276 codes, 848 comments, 1226 blanks, all 8350 lines
+
+Languages
++----------------+------------+------------+------------+------------+------------+
+| language       | files      | code       | comment    | blank      | total      |
++----------------+------------+------------+------------+------------+------------+
+| Python         |         17 |      1,514 |        655 |        382 |      2,551 |
+| HTML           |          1 |      1,479 |         23 |        194 |      1,696 |
+| TypeScript JSX |         13 |      1,052 |         47 |        104 |      1,203 |
+| Markdown       |          9 |        956 |          0 |        345 |      1,301 |
+| PostCSS        |          2 |        730 |         31 |        124 |        885 |
+| TypeScript     |          8 |        545 |         92 |         77 |        714 |
++----------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                 | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                    |         50 |      6,276 |        848 |      1,226 |      8,350 |
+| . (Files)                                                                                            |          1 |          2 |          0 |          0 |          2 |
+| backend                                                                                              |         15 |      1,418 |        341 |        329 |      2,088 |
+| backend (Files)                                                                                      |          2 |         48 |          0 |          0 |         48 |
+| backend/agents                                                                                       |          1 |          1 |          0 |          0 |          1 |
+| backend/aime                                                                                         |          1 |          2 |          0 |          0 |          2 |
+| backend/aime/actors                                                                                  |          1 |          2 |          0 |          0 |          2 |
+| backend/conversations                                                                                |          3 |        122 |         46 |         21 |        189 |
+| backend/projects                                                                                     |          4 |        479 |        139 |        140 |        758 |
+| backend/services                                                                                     |          3 |        665 |        118 |        140 |        923 |
+| backend/tools                                                                                        |          1 |        101 |         38 |         28 |        167 |
+| docs                                                                                                 |          1 |         23 |          0 |          7 |         30 |
+| frontend                                                                                             |         23 |      2,327 |        170 |        305 |      2,802 |
+| frontend/src                                                                                         |         23 |      2,327 |        170 |        305 |      2,802 |
+| frontend/src (Files)                                                                                 |          1 |         77 |          8 |          8 |         93 |
+| frontend/src/api                                                                                     |          3 |        241 |         48 |         29 |        318 |
+| frontend/src/components                                                                              |         15 |      1,711 |         73 |        222 |      2,006 |
+| frontend/src/components (Files)                                                                      |          2 |         30 |          0 |          1 |         31 |
+| frontend/src/components/Conversations                                                                |          3 |        120 |          4 |         12 |        136 |
+| frontend/src/components/Layout                                                                       |          2 |         27 |          2 |          1 |         30 |
+| frontend/src/components/Projects                                                                     |          8 |      1,534 |         67 |        208 |      1,809 |
+| frontend/src/hooks                                                                                   |          3 |        272 |         34 |         42 |        348 |
+| frontend/src/types                                                                                   |          1 |         26 |          7 |          4 |         37 |
+| infra                                                                                                |          1 |         50 |         17 |         14 |         81 |
+| infra/migrations                                                                                     |          1 |         50 |         17 |         14 |         81 |
+| infra/migrations/versions                                                                            |          1 |         50 |         17 |         14 |         81 |
+| specs                                                                                                |          9 |      2,456 |        320 |        571 |      3,347 |
+| specs/006-project-management                                                                         |          9 |      2,456 |        320 |        571 |      3,347 |
+| specs/006-project-management (Files)                                                                 |          7 |      2,367 |         23 |        518 |      2,908 |
+| specs/006-project-management/checklists                                                              |          1 |         43 |          0 |         14 |         57 |
+| specs/006-project-management/contracts                                                               |          1 |         46 |        297 |         39 |        382 |
++------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| filename                                                                                             | language       | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| /Users/yanwen/Documents/github/sunnyagent/CLAUDE.md                                                  | Markdown       |          2 |          0 |          0 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/agents/general.py                                  | Python         |          1 |          0 |          0 |          1 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/aime/actors/generic.py                             | Python         |          2 |          0 |          0 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/database.py                          | Python         |         69 |         27 |          6 |        102 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/models.py                            | Python         |          2 |          0 |          0 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/conversations/router.py                            | Python         |         51 |         19 |         15 |         85 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/main.py                                            | Python         |         46 |          0 |          0 |         46 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/models.py                                          | Python         |          2 |          0 |          0 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/__init__.py                               | Python         |          0 |          1 |          1 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/database.py                               | Python         |        197 |         68 |         43 |        308 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/models.py                                 | Python         |         45 |         19 |         36 |        100 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/projects/router.py                                 | Python         |        237 |         51 |         60 |        348 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/services/__init__.py                               | Python         |          8 |          3 |          3 |         14 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/services/file_context_service.py                   | Python         |        248 |         74 |         48 |        370 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/services/file_extractor.py                         | Python         |        409 |         41 |         89 |        539 |
+| /Users/yanwen/Documents/github/sunnyagent/backend/tools/file_tools.py                                | Python         |        101 |         38 |         28 |        167 |
+| /Users/yanwen/Documents/github/sunnyagent/docs/roadmap.md                                            | Markdown       |         23 |          0 |          7 |         30 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/App.tsx                                       | TypeScript JSX |         77 |          8 |          8 |         93 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/api/client.ts                                 | TypeScript     |          4 |          0 |          0 |          4 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/api/conversations.ts                          | TypeScript     |          9 |          0 |          2 |         11 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/api/projects.ts                               | TypeScript     |        228 |         48 |         27 |        303 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/ChatContainer.tsx                  | TypeScript JSX |         14 |          0 |          1 |         15 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/ConversationItem.tsx | TypeScript JSX |         63 |          2 |          4 |         69 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/ConversationList.tsx | TypeScript JSX |          7 |          1 |          0 |          8 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/Conversations.css    | PostCSS        |         50 |          1 |          8 |         59 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/InputBar.tsx                       | TypeScript JSX |         16 |          0 |          0 |         16 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Layout/MainLayout.tsx              | TypeScript JSX |          3 |          0 |          0 |          3 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Layout/Sidebar.tsx                 | TypeScript JSX |         24 |          2 |          1 |         27 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/NewProjectModal.tsx       | TypeScript JSX |         85 |          3 |         12 |        100 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectItem.tsx           | TypeScript JSX |        209 |          4 |         25 |        238 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectList.tsx           | TypeScript JSX |        160 |          6 |         13 |        179 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectSelectMenu.tsx     | TypeScript JSX |         78 |          3 |          9 |         90 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectWorkspace.tsx      | TypeScript JSX |         81 |          5 |          9 |         95 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/Projects.css              | PostCSS        |        680 |         30 |        116 |        826 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/SourcesPanel.tsx          | TypeScript JSX |        235 |         13 |         22 |        270 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/index.ts                  | TypeScript     |          6 |          3 |          2 |         11 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useChat.ts                              | TypeScript     |          2 |          0 |          0 |          2 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useConversations.ts                     | TypeScript     |          4 |          2 |          1 |          7 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useProjects.ts                          | TypeScript     |        266 |         32 |         41 |        339 |
+| /Users/yanwen/Documents/github/sunnyagent/frontend/src/types/index.ts                                | TypeScript     |         26 |          7 |          4 |         37 |
+| /Users/yanwen/Documents/github/sunnyagent/infra/migrations/versions/004_create_projects_table.py     | Python         |         50 |         17 |         14 |         81 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/checklists/requirements.md    | Markdown       |         43 |          0 |         14 |         57 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/contracts/projects_api.py     | Python         |         46 |        297 |         39 |        382 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/data-model.md                 | Markdown       |        195 |          0 |         55 |        250 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/plan.md                       | Markdown       |        108 |          0 |         28 |        136 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/prototype.html                | HTML           |      1,479 |         23 |        194 |      1,696 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/quickstart.md                 | Markdown       |        181 |          0 |         81 |        262 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/research.md                   | Markdown       |        121 |          0 |         40 |        161 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/spec.md                       | Markdown       |        120 |          0 |         47 |        167 |
+| /Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/tasks.md                      | Markdown       |        163 |          0 |         73 |        236 |
+| Total                                                                                                |                |      6,276 |        848 |      1,226 |      8,350 |
++------------------------------------------------------------------------------------------------------+----------------+------------+------------+------------+------------+
