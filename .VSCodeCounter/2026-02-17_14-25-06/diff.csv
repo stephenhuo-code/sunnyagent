@@ -1,0 +1,52 @@
+"filename", "language", "Markdown", "Python", "HTML", "TypeScript", "TypeScript JSX", "PostCSS", "comment", "blank", "total"
+"/Users/yanwen/Documents/github/sunnyagent/CLAUDE.md", "Markdown", 2, 0, 0, 0, 0, 0, 0, 0, 2
+"/Users/yanwen/Documents/github/sunnyagent/backend/agents/general.py", "Python", 0, 1, 0, 0, 0, 0, 0, 0, 1
+"/Users/yanwen/Documents/github/sunnyagent/backend/aime/actors/generic.py", "Python", 0, 2, 0, 0, 0, 0, 0, 0, 2
+"/Users/yanwen/Documents/github/sunnyagent/backend/conversations/database.py", "Python", 0, 69, 0, 0, 0, 0, 27, 6, 102
+"/Users/yanwen/Documents/github/sunnyagent/backend/conversations/models.py", "Python", 0, 2, 0, 0, 0, 0, 0, 0, 2
+"/Users/yanwen/Documents/github/sunnyagent/backend/conversations/router.py", "Python", 0, 51, 0, 0, 0, 0, 19, 15, 85
+"/Users/yanwen/Documents/github/sunnyagent/backend/main.py", "Python", 0, 46, 0, 0, 0, 0, 0, 0, 46
+"/Users/yanwen/Documents/github/sunnyagent/backend/models.py", "Python", 0, 2, 0, 0, 0, 0, 0, 0, 2
+"/Users/yanwen/Documents/github/sunnyagent/backend/projects/__init__.py", "Python", 0, 0, 0, 0, 0, 0, 1, 1, 2
+"/Users/yanwen/Documents/github/sunnyagent/backend/projects/database.py", "Python", 0, 197, 0, 0, 0, 0, 68, 43, 308
+"/Users/yanwen/Documents/github/sunnyagent/backend/projects/models.py", "Python", 0, 45, 0, 0, 0, 0, 19, 36, 100
+"/Users/yanwen/Documents/github/sunnyagent/backend/projects/router.py", "Python", 0, 237, 0, 0, 0, 0, 51, 60, 348
+"/Users/yanwen/Documents/github/sunnyagent/backend/services/__init__.py", "Python", 0, 8, 0, 0, 0, 0, 3, 3, 14
+"/Users/yanwen/Documents/github/sunnyagent/backend/services/file_context_service.py", "Python", 0, 248, 0, 0, 0, 0, 74, 48, 370
+"/Users/yanwen/Documents/github/sunnyagent/backend/services/file_extractor.py", "Python", 0, 409, 0, 0, 0, 0, 41, 89, 539
+"/Users/yanwen/Documents/github/sunnyagent/backend/tools/file_tools.py", "Python", 0, 101, 0, 0, 0, 0, 38, 28, 167
+"/Users/yanwen/Documents/github/sunnyagent/docs/roadmap.md", "Markdown", 23, 0, 0, 0, 0, 0, 0, 7, 30
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/App.tsx", "TypeScript JSX", 0, 0, 0, 0, 77, 0, 8, 8, 93
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/api/client.ts", "TypeScript", 0, 0, 0, 4, 0, 0, 0, 0, 4
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/api/conversations.ts", "TypeScript", 0, 0, 0, 9, 0, 0, 0, 2, 11
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/api/projects.ts", "TypeScript", 0, 0, 0, 228, 0, 0, 48, 27, 303
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/ChatContainer.tsx", "TypeScript JSX", 0, 0, 0, 0, 14, 0, 0, 1, 15
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/ConversationItem.tsx", "TypeScript JSX", 0, 0, 0, 0, 63, 0, 2, 4, 69
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/ConversationList.tsx", "TypeScript JSX", 0, 0, 0, 0, 7, 0, 1, 0, 8
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Conversations/Conversations.css", "PostCSS", 0, 0, 0, 0, 0, 50, 1, 8, 59
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/InputBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 16, 0, 0, 0, 16
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Layout/MainLayout.tsx", "TypeScript JSX", 0, 0, 0, 0, 3, 0, 0, 0, 3
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Layout/Sidebar.tsx", "TypeScript JSX", 0, 0, 0, 0, 24, 0, 2, 1, 27
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/NewProjectModal.tsx", "TypeScript JSX", 0, 0, 0, 0, 85, 0, 3, 12, 100
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectItem.tsx", "TypeScript JSX", 0, 0, 0, 0, 209, 0, 4, 25, 238
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectList.tsx", "TypeScript JSX", 0, 0, 0, 0, 160, 0, 6, 13, 179
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectSelectMenu.tsx", "TypeScript JSX", 0, 0, 0, 0, 78, 0, 3, 9, 90
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/ProjectWorkspace.tsx", "TypeScript JSX", 0, 0, 0, 0, 81, 0, 5, 9, 95
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/Projects.css", "PostCSS", 0, 0, 0, 0, 0, 680, 30, 116, 826
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/SourcesPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 235, 0, 13, 22, 270
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/components/Projects/index.ts", "TypeScript", 0, 0, 0, 6, 0, 0, 3, 2, 11
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useChat.ts", "TypeScript", 0, 0, 0, 2, 0, 0, 0, 0, 2
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useConversations.ts", "TypeScript", 0, 0, 0, 4, 0, 0, 2, 1, 7
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/hooks/useProjects.ts", "TypeScript", 0, 0, 0, 266, 0, 0, 32, 41, 339
+"/Users/yanwen/Documents/github/sunnyagent/frontend/src/types/index.ts", "TypeScript", 0, 0, 0, 26, 0, 0, 7, 4, 37
+"/Users/yanwen/Documents/github/sunnyagent/infra/migrations/versions/004_create_projects_table.py", "Python", 0, 50, 0, 0, 0, 0, 17, 14, 81
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/checklists/requirements.md", "Markdown", 43, 0, 0, 0, 0, 0, 0, 14, 57
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/contracts/projects_api.py", "Python", 0, 46, 0, 0, 0, 0, 297, 39, 382
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/data-model.md", "Markdown", 195, 0, 0, 0, 0, 0, 0, 55, 250
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/plan.md", "Markdown", 108, 0, 0, 0, 0, 0, 0, 28, 136
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/prototype.html", "HTML", 0, 0, 1479, 0, 0, 0, 23, 194, 1696
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/quickstart.md", "Markdown", 181, 0, 0, 0, 0, 0, 0, 81, 262
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/research.md", "Markdown", 121, 0, 0, 0, 0, 0, 0, 40, 161
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/spec.md", "Markdown", 120, 0, 0, 0, 0, 0, 0, 47, 167
+"/Users/yanwen/Documents/github/sunnyagent/specs/006-project-management/tasks.md", "Markdown", 163, 0, 0, 0, 0, 0, 0, 73, 236
+"Total", "-", 956, 1514, 1479, 545, 1052, 730, 848, 1226, 8350

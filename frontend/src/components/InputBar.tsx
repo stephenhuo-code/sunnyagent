@@ -32,14 +32,17 @@ function formatSize(bytes: number): string {
 }
 
 interface InputBarProps {
-  onSend: (message: string, agent?: string, uploadedFiles?: UploadedFile[]) => void;
+  onSend: (message: string, agent?: string, uploadedFiles?: UploadedFile[], projectFileIds?: string[], projectId?: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
   agents: Agent[];
   skills: Skill[];
+  projectFileCount?: number;
+  projectFileIds?: string[];
+  projectId?: string;
 }
 
-export default function InputBar({ onSend, onCancel, isStreaming, agents, skills }: InputBarProps) {
+export default function InputBar({ onSend, onCancel, isStreaming, agents, skills, projectFileCount, projectFileIds, projectId }: InputBarProps) {
   const [text, setText] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [showSkillSuggestions, setShowSkillSuggestions] = useState(false);
@@ -217,17 +220,24 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
       return;
     }
     const trimmed = text.trim();
-    // Allow sending with just files (no text required)
-    if (!trimmed && completedFiles.length === 0) return;
+    // Allow sending with just files (no text required) - either uploaded files or project files
+    const hasProjectFiles = projectFileIds && projectFileIds.length > 0;
+    if (!trimmed && completedFiles.length === 0 && !hasProjectFiles) return;
 
     const filesToSend = completedFiles.map(f => f.uploadedFile!);
-    onSend(trimmed, selectedAgent ?? undefined, filesToSend.length > 0 ? filesToSend : undefined);
+    onSend(
+      trimmed,
+      selectedAgent ?? undefined,
+      filesToSend.length > 0 ? filesToSend : undefined,
+      hasProjectFiles ? projectFileIds : undefined,
+      projectId
+    );
     setText("");
     setUploadingFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, isStreaming, onSend, onCancel, selectedAgent, completedFiles]);
+  }, [text, isStreaming, onSend, onCancel, selectedAgent, completedFiles, projectFileIds, projectId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // 忽略 IME 输入法组合过程中的回车（用于选择候选词）
@@ -366,7 +376,13 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
           value={text}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={completedFiles.length > 0 ? "文件已就绪，输入消息一起发送..." : "输入问题..."}
+          placeholder={
+            projectFileCount && projectFileCount > 0
+              ? `${projectFileCount} source(s) selected, 输入问题...`
+              : completedFiles.length > 0
+                ? "文件已就绪，输入消息一起发送..."
+                : "输入问题..."
+          }
           rows={1}
           disabled={isStreaming}
         />

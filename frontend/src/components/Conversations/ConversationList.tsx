@@ -5,6 +5,7 @@
 import { MessageSquare, Loader2 } from "lucide-react";
 import { ConversationItem } from "./ConversationItem";
 import type { ConversationSummary } from "../../api/conversations";
+import type { ProjectSummary } from "../../api/projects";
 import "./Conversations.css";
 
 interface ConversationListProps {
@@ -16,6 +17,9 @@ interface ConversationListProps {
   onSelect: (id: string, threadId?: string) => void;
   onUpdate: (id: string, title: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  // Project association
+  projects?: ProjectSummary[];
+  onAddToProject?: (conversationId: string, projectId: string) => Promise<void>;
 }
 
 export function ConversationList({
@@ -27,6 +31,8 @@ export function ConversationList({
   onSelect,
   onUpdate,
   onDelete,
+  projects = [],
+  onAddToProject,
 }: ConversationListProps) {
   if (isLoading) {
     return (
@@ -69,6 +75,8 @@ export function ConversationList({
           onSelect={() => onSelect(conversation.id)}
           onUpdate={(title) => onUpdate(conversation.id, title)}
           onDelete={() => onDelete(conversation.id)}
+          projects={projects}
+          onAddToProject={onAddToProject}
         />
       ))}
     </div>

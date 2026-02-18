@@ -38,12 +38,14 @@ from backend.auth.router import router as auth_router, users_router
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import UserInfo
 from backend.conversations.router import router as conversations_router
+from backend.projects.router import router as projects_router
 from backend.conversations.database import touch_conversation, get_conversation_by_thread, create_conversation
 from backend.auth.database import init_default_admin
 from backend.db import init_pool, close_pool, init_tables
 from backend.files import database as files_db
 from backend.llm import validate_config, get_current_provider
 from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVAL
+from backend.aime.context import AgentContext, SessionMetadata, FileContext, FileInfo, get_file_type
 
 # Environment variables already loaded above
 
@@ -214,6 +216,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(conversations_router)
+app.include_router(projects_router)
 
 
 @app.get("/api/agents")
@@ -249,8 +252,8 @@ async def get_skill(name: str):
     }
 
 
-def get_uploaded_file_info(file_id: str) -> dict | None:
-    """获取上传文件的元数据"""
+def get_uploaded_file_info(file_id: str) -> FileInfo | None:
+    """获取上传文件的元数据 (返回 FileInfo 对象)"""
     file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
     if not file_dir.exists():
         return None
@@ -260,11 +263,40 @@ def get_uploaded_file_info(file_id: str) -> dict | None:
         return None
 
     file_path = files[0]
-    return {
-        "file_id": file_id,
-        "filename": file_path.name,
-        "size": file_path.stat().st_size,
-    }
+    return FileInfo(
+        file_id=file_id,
+        filename=file_path.name,
+        file_type=get_file_type(file_path.name),
+        project_id=None,
+    )
+
+
+async def get_project_file_info(file_id: str, project_id: str) -> FileInfo | None:
+    """获取项目文件的元数据 (返回 FileInfo 对象)"""
+    from backend.db import get_pool
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT pf.original_name, pf.file_id
+            FROM project_files pf
+            JOIN projects p ON pf.project_id = p.id
+            WHERE pf.file_id = $1
+              AND p.id = $2
+              AND p.is_deleted = FALSE
+            """,
+            file_id,
+            project_id,
+        )
+        if not row:
+            return None
+        return FileInfo(
+            file_id=file_id,
+            filename=row["original_name"],
+            file_type=get_file_type(row["original_name"]),
+            project_id=project_id,
+        )
 
 
 @app.post("/api/chat")
@@ -275,6 +307,10 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     1. If request.skill is set, inject skill instructions and use general agent
     2. If request.agent is set, route directly to that agent (skip supervisor)
     3. Otherwise, use the supervisor for intent-based routing
+
+    Context model:
+    - Files are passed as metadata only (not content) to avoid intent pollution
+    - Agent uses read_file tool to get actual content when needed
     """
     message = request.message
 
@@ -287,31 +323,51 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     else:
         # Create a new conversation for this thread (auto-title from first 50 chars of message)
         title = request.message[:50] if request.message else "New Conversation"
+        # Parse project_id if provided
+        project_uuid = None
+        if request.project_id:
+            try:
+                project_uuid = uuid.UUID(request.project_id)
+            except ValueError:
+                logger.warning(f"Invalid project_id format: {request.project_id}")
         try:
-            await create_conversation(current_user.id, request.thread_id, title)
+            await create_conversation(current_user.id, request.thread_id, title, project_uuid)
         except Exception as e:
             logger.warning(f"Failed to create conversation for thread {request.thread_id}: {e}")
 
-    # 如果有上传文件，注入元数据（不是内容）
+    # Build AgentContext with file metadata (NOT content) - Layer 3 & 5
+    files: list[FileInfo] = []
+
+    # Collect uploaded file metadata
     if request.file_ids:
-        file_info_list = []
         for file_id in request.file_ids:
             info = get_uploaded_file_info(file_id)
             if info:
-                file_info_list.append(info)
+                files.append(info)
 
-        if file_info_list:
-            files_desc = "\n".join(
-                f"- {f['filename']} (ID: {f['file_id']}, 大小: {f['size']} bytes)"
-                for f in file_info_list
-            )
-            message = f"""[用户上传了以下文件]
-{files_desc}
+    # Collect project file metadata
+    if request.project_file_ids and request.project_id:
+        for file_id in request.project_file_ids:
+            info = await get_project_file_info(file_id, request.project_id)
+            if info:
+                files.append(info)
 
-你可以使用 read_uploaded_file(file_id) 工具读取文件内容。
+    # Create AgentContext
+    context = AgentContext(
+        session=SessionMetadata(
+            user_id=str(current_user.id),
+            thread_id=request.thread_id,
+            project_id=request.project_id,
+        ),
+        files=FileContext(files=files),
+        explicit_agent=request.agent if request.agent and request.agent in AGENT_REGISTRY else None,
+        skill=request.skill,
+    )
 
----
-用户消息: {request.message}"""
+    # Note: Context is NOT injected into message here to avoid intent pollution.
+    # Context will be injected at execution time in planner.py (_handle_delegate, _handle_plan)
+    if files:
+        logger.info(f"Context: {len(files)} files (will be injected at execution time)")
 
     # Skill-based routing: inject skill instructions into the message
     if request.skill and request.skill in SKILL_REGISTRY:
@@ -325,12 +381,7 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     async def event_generator():
         try:
             # Use AIME architecture for intent-driven routing
-            context = {
-                "explicit_agent": request.agent if request.agent in AGENT_REGISTRY else None,
-                "skill": request.skill,
-                "file_ids": request.file_ids,
-                "user_id": str(current_user.id),
-            }
+            # Pass AgentContext for structured context handling
             async for event in stream_aime_response(
                 thread_id=request.thread_id,
                 message=message,

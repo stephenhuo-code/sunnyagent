@@ -20,10 +20,14 @@ export interface UseConversationsResult {
   selectedId: string | null;
   refresh: () => Promise<void>;
   create: (title?: string) => Promise<Conversation>;
+  /** Create a new conversation within a project */
+  createInProject: (projectId: string, title?: string) => Promise<Conversation>;
   update: (id: string, title: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   select: (id: string | null) => void;
   clearSelection: () => void;
+  /** Get conversations without a project (for History list) */
+  historyConversations: ConversationSummary[];
 }
 
 const STORAGE_KEY = "selected-conversation-id";
@@ -61,11 +65,21 @@ export function useConversations(): UseConversationsResult {
       {
         id: conversation.id,
         title: conversation.title,
+        project_id: conversation.project_id,
         updated_at: conversation.updated_at,
       },
       ...prev,
     ]);
     setTotal((prev) => prev + 1);
+    setSelectedId(conversation.id);
+    localStorage.setItem(STORAGE_KEY, conversation.id);
+    return conversation;
+  }, []);
+
+  const createInProject = useCallback(async (projectId: string, title?: string): Promise<Conversation> => {
+    const conversation = await createConversation({ title, project_id: projectId });
+    // Don't add to main conversations list since it belongs to a project
+    // The project's conversation list will be refreshed separately
     setSelectedId(conversation.id);
     localStorage.setItem(STORAGE_KEY, conversation.id);
     return conversation;
@@ -107,6 +121,9 @@ export function useConversations(): UseConversationsResult {
     refresh();
   }, [refresh]);
 
+  // Filter to get only conversations without a project (for History)
+  const historyConversations = conversations.filter((c) => !c.project_id);
+
   return {
     conversations,
     total,
@@ -115,9 +132,11 @@ export function useConversations(): UseConversationsResult {
     selectedId,
     refresh,
     create,
+    createInProject,
     update,
     remove,
     select,
     clearSelection,
+    historyConversations,
   };
 }

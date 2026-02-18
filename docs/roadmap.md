@@ -63,11 +63,21 @@ flowchart TB
         K2["文档嵌入br> Embending"]
   end
  subgraph AIMI-agent["自主Agent核心-AIMI"]
-        n9["Progress Manager"]
-        n8["Dynamic Actor"]
-        n7["Supervisor Agent<br>意图识别"]
-        n6["Planer"]
-        n5["ActorFactory"]
+        n9["Progress Manager"<br>状态跟踪/DAG依赖/SSE事件]
+        n8["Dynamic Actor"<br>Rearcher agent/SQL agent/generic agent]
+        n7["Context Manager"<br>上下文存储/上下文提取/文件引用提取]
+        n6["Planer"<br>意图识别/任务规划/任务重规划]
+        n5["ActorFactory"<br>Actor选择/能力匹配]
+        
+        n6 --> n5
+        n6 --> n9
+        n6 --> n7
+
+        n5 --> n8
+        n9 <--> n8
+        n7 <--> n8
+        
+        
   end
  subgraph AgentLayer["Agent能力层"]
         DedicateAgent
@@ -108,10 +118,7 @@ flowchart TB
     B2 ~~~ B3
     B4 ~~~ B5
     B5 ~~~ B6
-    n7 --> n6
-    n6 --> n5
-    n5 --> n8
-    n8 --> n6
+    
     AgentLayer --> Platform
     AIMI-agent --> Agentplugin & DedicateAgent & KnowledgeBase
     Business --> Interface
@@ -151,11 +158,12 @@ flowchart TB
 | | 周报生成 (Skills) | 🔲 待开发 | 006 | P3 |
 | | 数据分析和图表生成 (Skill) | 🔲 待开发 | 019 | P4 |
 | | HR 助手 (自定义 Agent) | 🔲 待开发 | 022 | P4 |
-| **AIMI Agent 核心** | Supervisor Agent (意图识别) | ✅ 已支持 | 001/015 | P0 |
-| | Planner | 🔲 待开发 | 020 | 🔥 P0 |
-| | Actor Factory | 🔲 待开发 | 020 | 🔥 P0 |
-| | Dynamic Actor | 🔲 待开发 | 020 | 🔥 P0 |
-| | Progress Manager | 🔲 待开发 | 020 | 🔥 P0 |
+| **AIME Agent 核心** | Supervisor Agent (意图识别) | ✅ 已支持 | 001/015 | P0 |
+| | Planner | ✅ 已支持 | 005/020 | P0 |
+| | Actor Factory | ✅ 已支持 | 005/020 | P0 |
+| | Dynamic Actor | ✅ 已支持 | 005/020 | P0 |
+| | Progress Manager | ✅ 已支持 | 005/020 | P0 |
+| | Context Manager | ✅ 已支持 | 005/020 | P0 |
 | **Agent 能力层** | 通用任务处理 Agent | ✅ 已支持 | 001 | - |
 | | Deep Research Agent | ✅ 已支持 | 001 | - |
 | | 数据分析 Agent | 🔲 待开发 | 019 | P4 |
@@ -186,6 +194,8 @@ flowchart TB
 | **002** | 用户与对话管理 | ✅ 完成 | 用户认证、权限控制、对话历史管理 |
 | **003** | 任务展示模式重设计 | ✅ 完成 | 三层显示结构（思考区/执行区/结果区）、SSE 事件增强、任务树展示 |
 | **004** | 统一 LLM 提供商 | ✅ 完成 | 支持 Anthropic/OpenAI/DeepSeek 一键切换，使用 litellm 统一接口 |
+| **005** | AIME Agent 核心 | ✅ 完成 | IntentAnalyzer、Planner、ActorFactory、ProgressManager、ContextManager |
+| | | | 自主意图识别 → 任务分解 → 动态Actor选择 → 并行执行 → 上下文传递 |
 
 ### 统一优先级规划
 
@@ -195,19 +205,22 @@ flowchart TB
 
 ---
 
-#### P0 - 最高优先级：AIMI Agent 核心
+#### P0 - 最高优先级：AIME Agent 核心 ✅ 已完成
 
-> 🔥 **AIMI 是整个系统的智能中枢**，所有 Agent 的规划、执行、协调都依赖它
+> ✅ **AIME 是整个系统的智能中枢**，所有 Agent 的规划、执行、协调都依赖它
 
-| Spec ID | 模块名称 | 负责人 | 核心功能 | 预估工作量 | 说明 |
-|---------|----------|--------|----------|------------|------|
-| **020** | AIMI Agent 核心 | 开发者 A | Planner、ActorFactory、Dynamic Actor、Progress Manager | 7 天 | 自主规划和执行引擎 |
-| **015** | Supervisor 优化 | 开发者 A | 意图识别、术语库、路由策略（整合到 AIMI） | 5 天 | 与 020 合并开发 |
+| Spec ID | 模块名称 | 负责人 | 核心功能 | 状态 | 说明 |
+|---------|----------|--------|----------|------|------|
+| **005** | AIME Agent 核心 | 开发者 A | IntentAnalyzer、Planner、ActorFactory、ProgressManager、ContextManager | ✅ 完成 | 自主规划和执行引擎 |
+| **015** | Supervisor 优化 | 开发者 A | 意图识别、分类器链（Rule→Keyword→LLM）、路由策略 | ✅ 完成 | 整合到 AIME |
+| **020** | 上下文管理 | 开发者 A | ContextManager、任务间数据传递、文件引用处理 | ✅ 完成 | 支持多任务依赖 |
 
-**P0 说明**：
-- AIMI 核心实现后，系统具备自主规划和动态执行能力
-- Supervisor 作为 AIMI 的意图识别层，同步优化
-- 工作量：约 **1.5 周**（可与 P1 并行）
+**P0 完成说明**：
+- ✅ AIME 核心已实现，系统具备自主规划和动态执行能力
+- ✅ IntentAnalyzer 支持 Rule → Keyword → LLM 分类器链
+- ✅ ContextManager 支持任务间上下文传递、LRU缓存+PostgreSQL持久化
+- ✅ 文件引用提取确保下游任务可访问生成的文件
+- 📄 架构文档：[Architecture-AIMEAgent-Core.md](./Architecture-AIMEAgent-Core.md)
 
 ---
 
@@ -293,22 +306,23 @@ flowchart TB
 #### 依赖关系图
 
 ```
-P0 (AIMI核心)              P1 (基础能力)              P2 (平台能力)              P3 (业务场景)
+P0 (AIME核心) ✅            P1 (基础能力)              P2 (平台能力)              P3 (业务场景)
 ─────────────              ─────────────              ─────────────              ─────────────
                            016-项目管理 ─────────────────────────────────────┬► 018-企业知识库
                                                                              │        │
                            023-文件管理 ─────────────────────────────────────┘        ▼
                                                                                  005-质量分析
 
-020-AIMI核心 ──┬──────────► 010-Skill管理 ──────────► 024-Skill Creator
-               │                                                               008-企业集成
+005-AIME核心 ──┬──────────► 010-Skill管理 ──────────► 024-Skill Creator
+    ✅         │                                                               008-企业集成
                ├──────────► 025-Agent管理 ──────────► 026-Agent管理界面        014-部署监控
                │                                                               006-周报Skills
                ├──────────────────────────────────► 009-定时任务
                │
                │           011-Langfuse ───────────► 013-数据管理
                │
-015-Supervisor ─┘ (整合)
+               │ (已整合 IntentAnalyzer, Planner, ActorFactory,
+               │  ProgressManager, ContextManager)
 
 P4 (扩展功能):              P5 (远期规划):
 017-SQL数据源 ► 019-数据分析  021-桌面版GUI
@@ -321,9 +335,9 @@ P4 (扩展功能):              P5 (远期规划):
 #### 时间线总览
 
 ```
-Week 1                    Week 2                    Week 3                    Week 4+         Week 5+
+Week 1 ✅                  Week 2                    Week 3                    Week 4+         Week 5+
 │                         │                         │                         │               │
-├─ P0: AIMI核心 ──────────┼─────────────────────────►
+├─ P0: AIME核心 ✅完成 ────┤
 ├─ P1: 基础能力 ──────────►
 │                         ├─ P2: 平台能力 ───────────►
 │                         │                         ├─ P3: 业务场景 ──────────►
@@ -331,67 +345,76 @@ Week 1                    Week 2                    Week 3                    We
 │                         │                         │                         │               ├─ P5: 桌面版
 ```
 
-**总计**：4人并行约 **3 周** 完成 v1.0 核心（P0-P3），含 P4 约 4 周，P5 远期规划
+**进度**：
+- ✅ P0 AIME Agent 核心已完成
+- 🔲 P1-P5 待开发
+
+**总计**：4人并行约 **2-3 周** 完成 v1.0 核心（P1-P3），含 P4 约 3-4 周，P5 远期规划
 
 ---
 
 ## 功能详细说明
 
-### 020 - AIMI Agent 核心（最高优先级 🔥）
+### 005 - AIME Agent 核心 ✅ 已完成
 
 **目标**：构建自主规划和执行的智能中枢，让系统具备自主完成复杂任务的能力
 
 **核心组件**：
 
-| 组件 | 职责 | 说明 |
-|------|------|------|
-| **Planner** | 任务规划 | 分析用户意图，拆解为可执行的子任务序列 |
-| **ActorFactory** | Agent 创建 | 根据任务类型动态创建或选择合适的 Actor |
-| **Dynamic Actor** | 任务执行 | 执行具体任务，支持工具调用和子任务委托 |
-| **Progress Manager** | 进度管理 | 跟踪任务执行状态，支持重规划和异常处理 |
+| 组件 | 文件 | 职责 | 状态 |
+|------|------|------|------|
+| **IntentAnalyzer** | `intent/analyzer.py` | 用户意图分类（Rule→Keyword→LLM分类器链） | ✅ |
+| **AIMEPlanner** | `planner.py` | 主协调器，任务分解和执行循环 | ✅ |
+| **ActorFactory** | `actor_factory.py` | 动态 Agent 选择（explicit→capability→generic） | ✅ |
+| **ProgressManager** | `progress_manager.py` | 任务状态追踪、DAG依赖管理 | ✅ |
+| **ContextManager** | `context_manager.py` | 任务间上下文传递、文件引用处理 | ✅ |
 
-**核心能力**：
-- 自主任务规划（将复杂任务拆解为子任务 DAG）
-- 动态 Actor 选择和创建
-- 并行任务执行和协调
-- 执行进度跟踪和可视化
-- 异常检测和自动重规划
-- 任务依赖管理
+**已实现能力**：
+- ✅ 自主任务规划（将复杂任务拆解为子任务 DAG）
+- ✅ 动态 Actor 选择和创建
+- ✅ 并行任务执行和协调（max 3 parallel）
+- ✅ 执行进度跟踪和可视化
+- ✅ 异常检测和自动重规划
+- ✅ 任务依赖管理
+- ✅ 任务间上下文传递（LRU缓存 + PostgreSQL持久化）
+- ✅ 文件引用提取和保留（确保下游任务可访问生成的文件）
+- ✅ user_id 完整传递链路（文件权限验证）
 
-**架构示意**：
+**架构示意** (详见 [Architecture-AIMEAgent-Core.md](./Architecture-AIMEAgent-Core.md))：
 ```
-用户请求
+用户请求 (message, thread_id, context{user_id, file_ids})
     │
     ▼
 ┌─────────────────────────────────────────────────────┐
-│                   AIMI Agent 核心                    │
+│                   AIME Agent 核心                    │
 │  ┌─────────────────────────────────────────────┐   │
-│  │              Supervisor Agent               │   │
-│  │         (意图识别 + 路由决策)                │   │
+│  │              IntentAnalyzer                 │   │
+│  │    Rule → Keyword → LLM 分类器链             │   │
+│  │    输出: action (direct_reply|delegate|plan) │   │
 │  └─────────────────────────────────────────────┘   │
 │                        │                           │
 │                        ▼                           │
 │  ┌─────────────────────────────────────────────┐   │
-│  │                 Planner                      │   │
-│  │    (任务拆解 + 依赖分析 + 执行计划生成)        │   │
+│  │              AIMEPlanner                     │   │
+│  │    (任务拆解 + DAG依赖 + 执行循环)            │   │
 │  └─────────────────────────────────────────────┘   │
-│                        │                           │
-│          ┌─────────────┼─────────────┐             │
+│          │             │             │             │
 │          ▼             ▼             ▼             │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
-│  │ Actor (SQL) │ │Actor(Search)│ │Actor(Custom)│   │
+│  │ Research    │ │  SQL Agent  │ │  Generic    │   │
+│  │ Agent       │ │             │ │  Actor      │   │
 │  └─────────────┘ └─────────────┘ └─────────────┘   │
 │          │             │             │             │
 │          └─────────────┼─────────────┘             │
 │                        ▼                           │
 │  ┌─────────────────────────────────────────────┐   │
-│  │            Progress Manager                  │   │
-│  │     (状态跟踪 + 重规划 + 结果汇总)            │   │
+│  │    ProgressManager      ContextManager       │   │
+│  │    (状态追踪+SSE)       (上下文传递+文件引用)  │   │
 │  └─────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
                         │
                         ▼
-                   最终结果
+                   SSE Events → Frontend
 ```
 
 **典型场景**：
@@ -410,10 +433,11 @@ AIMI 执行流程：
 6. 汇总结果返回用户
 ```
 
-**与现有系统集成**：
-- 复用 Supervisor Agent 作为入口（015-Supervisor 优化）
-- 复用现有 Research/SQL/General Agent 作为 Actor
-- 与 003-任务展示 无缝对接（todos_updated 事件）
+**已集成**：
+- ✅ IntentAnalyzer 替代 Supervisor 作为入口
+- ✅ 复用现有 Research/SQL/General Agent 作为 Actor
+- ✅ 与 003-任务展示 无缝对接（task_spawned, task_output, task_completed 事件）
+- ✅ ContextManager 支持任务间数据传递和文件引用保留
 
 ---
 
@@ -994,42 +1018,45 @@ Week 4+（P4 功能 + 集成测试）
 
 **4 人分工详情**：
 
-| 角色 | 职责领域 | 负责 Spec | 技能要求 | 工作量 |
-|------|----------|-----------|----------|--------|
-| **开发者 A** | 🔥 AIMI 核心 + Agent/Skill | 020, 015, 010, 025, 024, 026 | LangGraph, 规划算法, Agent 调度 | ~19 天 |
-| **开发者 B** | 项目/知识库管理 | 016, 018, 005 | RAG, 向量检索, 项目管理 | ~15 天 |
-| **开发者 C** | 文件管理 + 定时任务 | 023, 009, 017(P4), 019(P4) | 文件处理, 调度系统, SQL | ~6 天 (核心) + 6 天 (P4) |
-| **开发者 D** | 基础设施 + 运维 | 011, 014, 008, 013, 006 | DevOps, 监控, SSO | ~13 天 |
-| **全员** | P4 + 集成 | 012, 测试 | 协作完成 | ~4 天 |
+| 角色 | 职责领域 | 负责 Spec | 技能要求 | 状态 |
+|------|----------|-----------|----------|------|
+| **开发者 A** | AIME 核心 + Agent/Skill | 005 ✅, 010, 025, 024, 026 | LangGraph, 规划算法, Agent 调度 | P0 ✅ 完成 |
+| **开发者 B** | 项目/知识库管理 | 016, 018, 质量分析 | RAG, 向量检索, 项目管理 | 🔲 待开发 |
+| **开发者 C** | 文件管理 + 定时任务 | 023, 009, 017(P4), 019(P4) | 文件处理, 调度系统, SQL | 🔲 待开发 |
+| **开发者 D** | 基础设施 + 运维 | 011, 014, 008, 013, 006 | DevOps, 监控, SSO | 🔲 待开发 |
+| **全员** | P4 + 集成 | 012, 测试 | 协作完成 | 🔲 待开发 |
 
 **依赖关系**：
 
 ```
-Week 1（P0 AIMI核心 + P1 基础能力）:
-  A: 🔥 020-AIMI核心 ────────────────────────────────────────┐
-  B: 016-项目管理 ────────────────────────────────────────┐  │
-  C: 023-文件管理 ────────────────────────────────────┐  │  │
-  D: 011-Langfuse ────────────────────────────────┐   │  │  │
-                                                   │   │  │  │
-Week 2（P0续 + P2 平台能力层）:                     │   │  │  │
-  A: 020(续) + 015-Supervisor + 010-Skill + 025-Agent──┼──┼──┤
-  B: 协助其他模块                                   │   │  │  │
-  C: 009-定时任务 ◄────────────────────────────────┘   │  │  │
-  D: 013-数据管理 ◄────────────────────────────────────┘  │  │
-                                                          │  │
-Week 3（P2续 + P3 业务场景）:                              ▼  ▼
-  A: 024-Skill Creator + 026-Agent界面
-  B: 018-知识库 ◄─────────────────────────────────────────┴──┘
-  C: 协助 018/005
+Week 1 ✅ 已完成（P0 AIME核心）:
+  A: ✅ 005-AIME核心（IntentAnalyzer, Planner, ActorFactory, ProgressManager, ContextManager）
+
+Week 2（P1 基础能力）:
+  A: 010-Skill + 025-Agent ─────────────────────────────────┐
+  B: 016-项目管理 ────────────────────────────────────────┐ │
+  C: 023-文件管理 ────────────────────────────────────┐  │ │
+  D: 011-Langfuse ────────────────────────────────┐   │  │ │
+                                                   │   │  │ │
+Week 3（P2 平台能力层）:                            │   │  │ │
+  A: 024-Skill Creator + 026-Agent界面 ◄──────────┼───┼──┼─┘
+  B: 协助其他模块                                   │   │  │
+  C: 009-定时任务 ◄────────────────────────────────┘   │  │
+  D: 013-数据管理 ◄────────────────────────────────────┘  │
+                                                          │
+Week 4（P3 业务场景）:                                      ▼
+  A: 协助 018/质量分析
+  B: 018-知识库 ◄─────────────────────────────────────────┘
+  C: 协助 018
   D: 008-企业集成 ► 014-部署监控
 
-Week 4（P3续）:
-  A: 协助 005
-  B: 005-质量分析助手
-  C: 协助 005
+Week 5（P3续）:
+  A: 协助质量分析
+  B: 质量分析助手
+  C: 协助
   D: 006-周报 + 集成测试
 
-Week 5+（P4 扩展功能 - 可选）:
+Week 6+（P4 扩展功能 - 可选）:
   C: 017-SQL数据源 ► 019-数据分析Agent
   全员: 012-飞书机器人 + 集成测试 + 优化
 
@@ -1038,14 +1065,18 @@ P5（远期规划）:
 ```
 
 **关键节点**：
-- **Day 7**：A 完成 020-AIMI 核心基础版本，系统具备自主规划能力
-- **Day 10**：A 完成 015-Supervisor 优化 + P1 Agent/Skill 管理
-- **Day 3**：B 完成 016-项目管理，C 完成 023-文件管理
-- **Day 6**：D 完成 011-Langfuse + 013-对话数据管理
-- **Week 3**：B 开始 018-知识库，A 完成 P2 Skill/Agent 增强
-- **Week 4 末**：所有 P0-P3 核心功能完成
+- ✅ **已完成**：A 完成 005-AIME 核心，系统具备自主规划能力
+  - IntentAnalyzer（Rule→Keyword→LLM分类器链）
+  - AIMEPlanner（任务分解、执行循环）
+  - ActorFactory（动态Agent选择）
+  - ProgressManager（状态追踪）
+  - ContextManager（上下文传递、文件引用处理）
+- 🔲 **下一步**：P1 基础能力层
+  - B 完成 016-项目管理，C 完成 023-文件管理
+  - A 完成 010-Skill管理 + 025-Agent管理
+  - D 完成 011-Langfuse
 
-**总计**：约 **3-4 周** 完成 v1.0 核心（P0-P3），含 P4 约 5 周
+**剩余总计**：约 **2-3 周** 完成 v1.0 核心（P1-P3），含 P4 约 4 周
 
 ---
 
@@ -1071,10 +1102,9 @@ specs/
 ├── 003-task-display/                  # ✅ 已完成 - 三层展示、SSE 增强
 ├── 004-unified-llm-provider/          # ✅ 已完成 - 多 LLM 提供商支持
 │
-│  # P0 - 最高优先级：AIMI Agent 核心
-├── 020-aimi-agent-core/               # 🔥 开发者 A (7天) - 自主规划执行引擎
-│   # Planner, ActorFactory, Dynamic Actor, Progress Manager
-├── 015-supervisor-optimization/       # 🔥 开发者 A (5天) - 与 020 合并开发
+│  # P0 - 最高优先级：AIME Agent 核心 ✅ 已完成
+├── 005-aime-supervisor/               # ✅ 已完成 - IntentAnalyzer, Planner, ActorFactory, ProgressManager, ContextManager
+│   # 自主意图识别 → 任务分解 → 动态Actor选择 → 并行执行 → 上下文传递
 │
 │  # P1 - 高优先级：基础能力层
 ├── 016-project-management/            # 🔲 开发者 B (3天) - 项目 CRUD、项目关联、项目对话

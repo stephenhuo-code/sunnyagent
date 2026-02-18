@@ -21,6 +21,7 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.aime.actor_factory import ActorFactory
+from backend.aime.context import AgentContext
 from backend.aime.context_manager import ContextManager
 from backend.aime.intent import IntentAnalyzer, IntentResult
 from backend.aime.models import Actor, SubtaskSpec
@@ -32,14 +33,16 @@ logger = logging.getLogger(__name__)
 
 # Direct reply system prompt for simple queries
 _DIRECT_REPLY_PROMPT = """\
-You are a helpful AI assistant. Respond to the user's message directly and concisely.
+你是一个有帮助的 AI 助手。请直接、简洁地回复用户消息。
 
-Guidelines:
-- Be helpful and friendly
-- Keep responses focused and relevant
-- Use markdown formatting when appropriate
-- For math questions, show the calculation
-- For factual questions, provide accurate information
+**重要：你必须始终用中文回复用户。**
+
+指南：
+- 友好且乐于助人
+- 保持回复聚焦和相关
+- 适当使用 markdown 格式
+- 数学问题请展示计算过程
+- 事实问题请提供准确信息
 """
 
 # Task failure marker - agents should use this prefix when they cannot complete a task
@@ -114,7 +117,7 @@ class AIMEPlanner:
         self,
         message: str,
         thread_id: str,
-        context: dict[str, Any] | None = None,
+        context: AgentContext | dict[str, Any] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Process user message and yield SSE events.
 
@@ -124,15 +127,23 @@ class AIMEPlanner:
         Args:
             message: User message
             thread_id: Conversation thread ID
-            context: Optional context (may contain explicit_agent, file_ids, etc.)
+            context: AgentContext or legacy dict (for backwards compatibility)
 
         Yields:
             SSE event dicts for frontend streaming
         """
         event_id = 0
 
-        # Save user_id for downstream execution (P0 fix)
-        self._current_user_id = context.get("user_id") if context else None
+        # Extract user_id and store context reference for later use
+        if isinstance(context, AgentContext):
+            self._current_user_id = context.session.user_id
+            self._current_context = context  # Store for injection at execution time
+        elif isinstance(context, dict):
+            self._current_user_id = context.get("user_id")
+            self._current_context = None  # No AgentContext available
+        else:
+            self._current_user_id = None
+            self._current_context = None
 
         # Log entry point
         logger.info(
@@ -141,7 +152,8 @@ class AIMEPlanner:
         )
 
         try:
-            # Analyze user intent
+            # Analyze user intent - pass AgentContext directly
+            # IntentAnalyzer will extract simplified context (no file_id, project_id)
             intent = await self.intent_analyzer.analyze(message, context)
             logger.info(
                 f"[process] Intent analyzed - action={intent.action}, "
@@ -218,9 +230,17 @@ class AIMEPlanner:
         logger.info(f"[_handle_direct_reply] Starting direct response generation")
         event_id = start_event_id
 
+        # Inject file context if available
+        reply_message = message
+        if self._current_context:
+            context_prompt = self._current_context.build_context_prompt()
+            if context_prompt:
+                reply_message = f"{context_prompt}\n\n---\n\n{message}"
+                logger.info("[_handle_direct_reply] Injected file context")
+
         messages = [
             SystemMessage(content=_DIRECT_REPLY_PROMPT),
-            HumanMessage(content=message),
+            HumanMessage(content=reply_message),
         ]
 
         try:
@@ -342,11 +362,19 @@ class AIMEPlanner:
             # Start task in progress manager
             self.progress_manager.start_task(spec.id, actor.name)
 
+            # Inject full context at execution time (file metadata with tool hints)
+            agent_message = message
+            if self._current_context:
+                context_prompt = self._current_context.build_context_prompt()
+                if context_prompt:
+                    agent_message = f"{context_prompt}\n\n---\n\n{message}"
+                    logger.info(f"[_handle_delegate] Injected context for execution")
+
             # Execute actor with task_id for tool call association
             start_time = time.time()
             result_text = ""  # Collect task output for final summary
             async for event in self._execute_actor(
-                actor, message, thread_id, event_id,
+                actor, agent_message, thread_id, event_id,
                 task_id=spec.id,
                 user_id=self._current_user_id,
             ):
@@ -649,6 +677,13 @@ class AIMEPlanner:
                         )
                         if context_str:
                             task_message = f"{task_message}\n\n## 上下文信息（来自前置任务的输出）\n\n{context_str}\n\n## 注意\n请基于上述上下文信息完成当前任务，不要要求用户重新提供这些数据。"
+
+                        # Inject file context at execution time (file metadata with tool hints)
+                        if self._current_context:
+                            file_context = self._current_context.build_context_prompt()
+                            if file_context:
+                                task_message = f"{file_context}\n\n---\n\n{task_message}"
+                                logger.info(f"[task:{spec.id[:8]}] Injected file context for execution")
 
                         # Execute and collect output with task_id for tool call association
                         result_text = ""

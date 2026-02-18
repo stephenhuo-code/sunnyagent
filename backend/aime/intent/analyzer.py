@@ -1,13 +1,15 @@
 """Intent Analyzer - orchestrates classifier chain for intent analysis."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.aime.intent.classifiers.base import ClassifierBase
-from backend.aime.intent.classifiers.keyword_based import KeywordClassifier
 from backend.aime.intent.classifiers.llm_based import LLMClassifier
 from backend.aime.intent.classifiers.rule_based import RuleBasedClassifier
 from backend.aime.intent.models import IntentResult
+
+if TYPE_CHECKING:
+    from backend.aime.context import AgentContext
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,7 @@ class IntentAnalyzer:
 
     Classifiers are executed in priority order (lower priority = higher precedence):
     1. RuleBasedClassifier (priority=0) - Explicit routing patterns
-    2. KeywordClassifier (priority=10) - Quick pattern matching
-    3. LLMClassifier (priority=20) - Semantic analysis
+    2. LLMClassifier (priority=10) - Semantic analysis with context awareness
 
     Each classifier returns IntentResult or None. First non-None result is used.
     If all classifiers return None, defaults to direct_reply with low confidence.
@@ -31,10 +32,9 @@ class IntentAnalyzer:
             classifiers: Optional custom classifiers. If None, uses default chain.
         """
         if classifiers is None:
-            # Default classifier chain with all three classifiers
+            # Default classifier chain: rule-based + LLM
             classifiers = [
                 RuleBasedClassifier(),
-                KeywordClassifier(),
                 LLMClassifier(),
             ]
 
@@ -58,7 +58,7 @@ class IntentAnalyzer:
     async def analyze(
         self,
         message: str,
-        context: dict[str, Any] | None = None,
+        context: "AgentContext | dict[str, Any] | None" = None,
     ) -> IntentResult:
         """Analyze user message and determine intent.
 
@@ -66,25 +66,59 @@ class IntentAnalyzer:
 
         Args:
             message: User message
-            context: Optional conversation context (may contain explicit_agent, etc.)
+            context: AgentContext or legacy dict. If AgentContext, extracts simplified
+                     context (project_name, filenames only - no file_id, project_id)
+                     to prevent intent pollution.
 
         Returns:
             IntentResult with determined action and supporting information
         """
+        from backend.aime.context import AgentContext
+
+        # Build simplified context for intent analysis (exclude technical details)
+        intent_context_str = ""
+        context_dict: dict[str, Any] = {}
+
+        if isinstance(context, AgentContext):
+            # Extract semantic information only (no file_id, project_id, tool hints)
+            parts = []
+            if context.session.project_name:
+                parts.append(f"用户在项目「{context.session.project_name}」中工作")
+            if context.files.files:
+                file_names = [f"「{f.filename}」" for f in context.files.files]
+                parts.append(f"用户选择了文件: {', '.join(file_names)}")
+            if parts:
+                intent_context_str = "。".join(parts) + "。\n\n"
+
+            # Convert to dict for classifier compatibility
+            context_dict = {
+                "explicit_agent": context.explicit_agent,
+                "skill": context.skill,
+                "user_id": context.session.user_id,
+                "project_id": context.session.project_id,
+            }
+        elif isinstance(context, dict):
+            context_dict = context
+        else:
+            context_dict = {}
+
+        # Build message for intent analysis (with simplified context prefix)
+        intent_message = f"{intent_context_str}{message}" if intent_context_str else message
+
         # Log entry with message preview and context summary
-        context_summary = {k: v for k, v in (context or {}).items() if v is not None}
+        context_summary = {k: v for k, v in context_dict.items() if v is not None}
         logger.info(
-            f"[analyze] Starting - message_len={len(message)}, "
-            f"preview='{message[:50]}...', context={context_summary}"
+            f"[analyze] Starting - message_len={len(intent_message)}, "
+            f"preview='{intent_message[:80]}...', context={context_summary}"
         )
 
-        domain = context.get("domain") if context else None
+        domain = context_dict.get("domain")
 
         for classifier in self._classifiers:
             try:
                 result = await classifier.classify(
-                    message=message,
-                    context=context,
+                    message=intent_message,
+                    context=context_dict,
                     domain=domain,
                 )
                 if result is not None:

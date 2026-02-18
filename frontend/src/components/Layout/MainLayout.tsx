@@ -10,6 +10,7 @@ import './Layout.css';
 interface MainLayoutProps {
   children: ReactNode;
   conversationList?: ReactNode | ((collapsed: boolean) => ReactNode);
+  projectsSection?: ReactNode | ((collapsed: boolean) => ReactNode);
   onNewConversation: () => void;
   onShowAdmin?: () => void;
   // Props for conversation popover
@@ -25,6 +26,7 @@ interface MainLayoutProps {
 export function MainLayout({
   children,
   conversationList,
+  projectsSection,
   onNewConversation,
   onShowAdmin,
   conversations,
@@ -47,6 +49,7 @@ export function MainLayout({
         onSelectConversation={onSelectConversation}
         onUpdateConversation={onUpdateConversation}
         onDeleteConversation={onDeleteConversation}
+        projectsSection={projectsSection}
       >
         {conversationList}
       </Sidebar>

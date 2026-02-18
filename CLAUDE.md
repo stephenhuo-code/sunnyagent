@@ -334,6 +334,8 @@ See `docs/ai-dev-best-practices.md` for full AI-assisted development guidelines.
 - config/llm.yaml (YAML 配置文件) (004-unified-llm-provider)
 - Python 3.11+ + litellm, langchain-litellm, FastAPI, LangGraph, deepagents (004-unified-llm-provider)
 - N/A（配置通过环境变量） (004-unified-llm-provider)
+- Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, React 19, LangGraph, asyncpg (006-project-management)
+- PostgreSQL (projects, project_files 表), 文件系统 (项目文件永久存储) (006-project-management)
 
 ## Recent Changes
 - 004-unified-llm-provider: Added Python 3.11+ + litellm, langchain, pyyaml, python-dotenv

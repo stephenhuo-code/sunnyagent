@@ -10,10 +10,11 @@ from backend.registry import register_agent
 from backend.research_prompts import RESEARCHER_INSTRUCTIONS
 from backend.research_tools import tavily_search, think_tool
 from backend.skills import SKILL_REGISTRY
+from backend.tools.file_tools import read_file
 
 logger = logging.getLogger(__name__)
 
-_tools = [tavily_search, think_tool]
+_tools = [tavily_search, think_tool, read_file]  # 添加文件读取工具
 
 # Skills to bind to the research agent (loaded from SKILL_REGISTRY)
 _BOUND_SKILLS = ["pdf", "web-scraping"]

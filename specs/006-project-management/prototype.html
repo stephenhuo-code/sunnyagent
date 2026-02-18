@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SunnyAgent - Project Management Prototype</title>
+  <style>
+    /* ===== CSS Variables (from existing design system) ===== */
+    :root {
+      --bg: #ffffff;
+      --bg-surface: #F8FAFC;
+      --bg-hover: #F1F5F9;
+      --border: #E2E8F0;
+      --text: #1E293B;
+      --text-muted: #64748B;
+      --text-dim: #94A3B8;
+      --accent: #2563EB;
+      --accent-hover: #3B82F6;
+      --accent-dark: #1E40AF;
+      --accent-light: #EFF6FF;
+      --error: #DC2626;
+      --success: #059669;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    /* ===== Reset ===== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Main Layout ===== */
+    .app-container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ===== Sidebar ===== */
+    .sidebar {
+      width: 280px;
+      background: var(--bg-hover);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.2s ease;
+    }
+
+    .sidebar.collapsed {
+      width: 64px;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+    }
+
+    .sidebar-logo svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .sidebar-logo span {
+      font-weight: 600;
+      color: var(--accent-dark);
+      font-size: 16px;
+      white-space: nowrap;
+    }
+
+    .sidebar.collapsed .sidebar-logo span {
+      display: none;
+    }
+
+    .collapse-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .collapse-btn:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar.collapsed .sidebar-content {
+      padding: 12px 8px;
+    }
+
+    /* Sidebar Buttons */
+    .sidebar-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.15s;
+      width: 100%;
+      text-align: left;
+    }
+
+    .sidebar-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-dim);
+    }
+
+    .sidebar-btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .sidebar-btn.primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .sidebar.collapsed .sidebar-btn {
+      padding: 10px;
+      justify-content: center;
+    }
+
+    .sidebar.collapsed .sidebar-btn span {
+      display: none;
+    }
+
+    /* Sidebar Sections */
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 4px 0;
+    }
+
+    .sidebar-section-header .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .add-project-btn {
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .add-project-btn:hover {
+      background: var(--bg);
+      color: var(--accent);
+    }
+
+    .sidebar.collapsed .sidebar-section-header span,
+    .sidebar.collapsed .add-project-btn {
+      display: none;
+    }
+
+    /* Project Tree */
+    .project-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .project-item {
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .project-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s;
+    }
+
+    .project-header:hover {
+      background: var(--bg);
+    }
+
+    .project-header.active {
+      background: var(--accent-light);
+      color: var(--accent-dark);
+    }
+
+    .project-header .expand-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-dim);
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+
+    .project-item.expanded .project-header .expand-icon {
+      transform: rotate(90deg);
+    }
+
+    .project-header .folder-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .project-name {
+      flex: 1;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .project-conversations {
+      display: none;
+      padding-left: 24px;
+    }
+
+    .project-item.expanded .project-conversations {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .conversation-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+
+    .conversation-item:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .conversation-item.active {
+      background: var(--accent-light);
+      color: var(--accent-dark);
+    }
+
+    .conversation-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .conversation-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* History Section */
+    .history-group {
+      margin-top: 8px;
+    }
+
+    .history-group-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 4px 10px;
+      text-transform: uppercase;
+    }
+
+    /* Sidebar Footer */
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar.collapsed .sidebar-footer {
+      padding: 12px 8px;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      color: var(--text-muted);
+    }
+
+    .user-details {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .user-role {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .sidebar.collapsed .user-details {
+      display: none;
+    }
+
+    .sidebar-btn.logout {
+      color: var(--error);
+      border-color: transparent;
+      background: transparent;
+    }
+
+    .sidebar-btn.logout:hover {
+      background: #FEF2F2;
+    }
+
+    /* ===== Main Content ===== */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    /* ===== Project Workspace ===== */
+    .project-workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ===== Sources Panel ===== */
+    .sources-panel {
+      width: 360px;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.2s ease;
+    }
+
+    .sources-panel.collapsed {
+      width: 0;
+      overflow: hidden;
+    }
+
+    .sources-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sources-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .sources-toggle {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .sources-toggle:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-dim);
+    }
+
+    .sources-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Add Sources Button */
+    .add-sources-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border: 2px dashed var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+
+    .add-sources-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    /* Web Search (optional feature) */
+    .web-search-section {
+      padding: 12px;
+      background: var(--bg-surface);
+      border-radius: var(--radius-sm);
+    }
+
+    .web-search-label {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .web-search-options {
+      display: flex;
+      gap: 8px;
+    }
+
+    .web-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 16px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .web-option:hover {
+      border-color: var(--accent);
+    }
+
+    /* Select All Row */
+    .select-all-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .select-all-row label {
+      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* File List */
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .file-source-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .file-source-item:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-dim);
+    }
+
+    .file-source-item.selected {
+      background: var(--accent-light);
+      border-color: var(--accent);
+    }
+
+    .file-icon {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .file-icon.pdf { color: #DC2626; }
+    .file-icon.doc { color: #2563EB; }
+    .file-icon.spreadsheet { color: #059669; }
+
+    .file-name {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-checkbox {
+      width: 20px;
+      height: 20px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* ===== Chat Panel ===== */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--bg);
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chat-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .chat-header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .chat-action-btn {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .chat-action-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-dim);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .message {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .message-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .message.user .message-avatar {
+      background: var(--accent-light);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .message-content {
+      flex: 1;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .message-content p {
+      margin-bottom: 12px;
+    }
+
+    .message-content strong {
+      font-weight: 600;
+    }
+
+    .message-content ol {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .message-content li {
+      margin-bottom: 8px;
+    }
+
+    /* Chat Input */
+    .chat-input-area {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-surface);
+      transition: border-color 0.15s;
+    }
+
+    .chat-input-wrapper:focus-within {
+      border-color: var(--accent);
+    }
+
+    .chat-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      color: var(--text);
+      resize: none;
+      outline: none;
+      min-height: 24px;
+      max-height: 120px;
+    }
+
+    .chat-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .source-indicator {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .send-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: var(--accent);
+      color: white;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ===== Context Menu ===== */
+    .context-menu {
+      position: fixed;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      min-width: 180px;
+      padding: 4px;
+      display: none;
+    }
+
+    .context-menu.visible {
+      display: block;
+    }
+
+    .context-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      width: 100%;
+      text-align: left;
+      transition: background 0.1s;
+    }
+
+    .context-menu-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .context-menu-item.danger {
+      color: var(--error);
+    }
+
+    .context-menu-item.danger:hover {
+      background: #FEF2F2;
+    }
+
+    .context-menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    .context-submenu {
+      position: relative;
+    }
+
+    .context-submenu-arrow {
+      margin-left: auto;
+    }
+
+    .submenu {
+      position: absolute;
+      left: 100%;
+      top: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      min-width: 160px;
+      padding: 4px;
+      display: none;
+    }
+
+    .context-submenu:hover .submenu {
+      display: block;
+    }
+
+    /* ===== Modal ===== */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s;
+    }
+
+    .modal-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: var(--bg);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      width: 400px;
+      max-width: 90vw;
+      transform: scale(0.95);
+      transition: transform 0.2s;
+    }
+
+    .modal-overlay.visible .modal {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .modal-close:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      color: var(--text);
+      transition: border-color 0.15s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-secondary {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-dim);
+    }
+
+    .btn-primary {
+      border: none;
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ===== Empty State ===== */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+      text-align: center;
+      gap: 12px;
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      opacity: 0.5;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+    }
+
+    /* ===== Toast ===== */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      background: var(--text);
+      color: white;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.2s;
+      z-index: 1001;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ===== Collapsed Sources Trigger ===== */
+    .sources-expand-btn {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 48px;
+      border: 1px solid var(--border);
+      border-left: none;
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .sources-expand-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+
+    .sources-panel.collapsed + .chat-panel .sources-expand-btn {
+      display: flex;
+    }
+
+    .chat-panel {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <span>SunnyAgent</span>
+        </div>
+        <button class="collapse-btn" onclick="toggleSidebar()" title="收起侧边栏">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="11 17 6 12 11 7"/>
+            <polyline points="18 17 13 12 18 7"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- New Conversation Button -->
+        <button class="sidebar-btn primary" onclick="showToast('新建对话')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>新建对话</span>
+        </button>
+
+        <!-- Projects Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <div class="header-left">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span>PROJECTS</span>
+            </div>
+            <button class="add-project-btn" onclick="showNewProjectModal()" title="新建项目">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="project-tree">
+            <!-- Project 1 - Expanded -->
+            <div class="project-item expanded" id="project-1">
+              <div class="project-header active" onclick="toggleProject('project-1')" oncontextmenu="showProjectMenu(event, 'project-1')">
+                <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+                <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span class="project-name">研究项目 A</span>
+              </div>
+              <div class="project-conversations">
+                <div class="conversation-item active" oncontextmenu="showProjectConversationMenu(event)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span class="conversation-title">关于 AIME 架构的讨论</span>
+                </div>
+                <div class="conversation-item" oncontextmenu="showProjectConversationMenu(event)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span class="conversation-title">代码审查记录</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Project 2 - Collapsed -->
+            <div class="project-item" id="project-2">
+              <div class="project-header" onclick="toggleProject('project-2')" oncontextmenu="showProjectMenu(event, 'project-2')">
+                <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+                <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span class="project-name">产品设计</span>
+              </div>
+              <div class="project-conversations">
+                <div class="conversation-item" oncontextmenu="showProjectConversationMenu(event)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span class="conversation-title">用户反馈分析</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Project 3 - Collapsed -->
+            <div class="project-item" id="project-3">
+              <div class="project-header" onclick="toggleProject('project-3')" oncontextmenu="showProjectMenu(event, 'project-3')">
+                <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+                <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span class="project-name">日常笔记</span>
+              </div>
+              <div class="project-conversations"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <div class="header-left">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span>HISTORY</span>
+            </div>
+          </div>
+
+          <div class="history-group">
+            <div class="history-group-label">今天</div>
+            <div class="conversation-item" oncontextmenu="showHistoryMenu(event)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span class="conversation-title">帮我写一个 Python 脚本</span>
+            </div>
+          </div>
+
+          <div class="history-group">
+            <div class="history-group-label">昨天</div>
+            <div class="conversation-item" oncontextmenu="showHistoryMenu(event)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span class="conversation-title">React 组件设计问题</span>
+            </div>
+          </div>
+
+          <div class="history-group">
+            <div class="history-group-label">更早</div>
+            <div class="conversation-item" oncontextmenu="showHistoryMenu(event)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span class="conversation-title">数据库优化建议</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          <div class="user-details">
+            <span class="user-name">yanwen</span>
+            <span class="user-role">管理员</span>
+          </div>
+        </div>
+        <button class="sidebar-btn logout">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span>退出登录</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="project-workspace">
+        <!-- Sources Panel -->
+        <div class="sources-panel" id="sourcesPanel">
+          <div class="sources-header">
+            <h2>Sources</h2>
+            <button class="sources-toggle" onclick="toggleSourcesPanel()" title="收起面板">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="sources-content">
+            <!-- Add Sources Button -->
+            <button class="add-sources-btn" onclick="showToast('选择文件上传')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add sources
+            </button>
+
+            <!-- Web Search Section (Optional) -->
+            <div class="web-search-section">
+              <div class="web-search-label">Search the web for new sources</div>
+              <div class="web-search-options">
+                <button class="web-option">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                  </svg>
+                  Web
+                </button>
+                <button class="web-option">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  Fast Research
+                </button>
+              </div>
+            </div>
+
+            <!-- Select All -->
+            <div class="select-all-row">
+              <label>
+                <input type="checkbox" class="file-checkbox" id="selectAll" onchange="toggleSelectAll()">
+                Select all sources
+              </label>
+            </div>
+
+            <!-- File List -->
+            <div class="file-list">
+              <div class="file-source-item selected" onclick="toggleFileSelect(this)">
+                <div class="file-icon pdf">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <span class="file-name">AIME.pdf</span>
+                <input type="checkbox" class="file-checkbox" checked onchange="updateSourceCount()">
+              </div>
+
+              <div class="file-source-item" onclick="toggleFileSelect(this)">
+                <div class="file-icon pdf">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <span class="file-name">Agentic Design Patterns: A System-Th...</span>
+                <input type="checkbox" class="file-checkbox" onchange="updateSourceCount()">
+              </div>
+
+              <div class="file-source-item" onclick="toggleFileSelect(this)">
+                <div class="file-icon pdf">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <span class="file-name">arXiv:2309.07864v3 [cs.AI] 19 Sep 2023</span>
+                <input type="checkbox" class="file-checkbox" onchange="updateSourceCount()">
+              </div>
+
+              <div class="file-source-item" onclick="toggleFileSelect(this)">
+                <div class="file-icon pdf">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <span class="file-name">从爆火的Moltbook看Agent的七个演进...</span>
+                <input type="checkbox" class="file-checkbox" onchange="updateSourceCount()">
+              </div>
+
+              <div class="file-source-item" onclick="toggleFileSelect(this)">
+                <div class="file-icon spreadsheet">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="8" y1="13" x2="16" y2="13"/>
+                    <line x1="8" y1="17" x2="16" y2="17"/>
+                    <line x1="8" y1="9" x2="10" y2="9"/>
+                  </svg>
+                </div>
+                <span class="file-name">企业级Agentic AI架构设计| 亚马逊AW...</span>
+                <input type="checkbox" class="file-checkbox" onchange="updateSourceCount()">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+          <!-- Expand Sources Button (when collapsed) -->
+          <button class="sources-expand-btn" onclick="toggleSourcesPanel()" title="展开 Sources 面板">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+
+          <div class="chat-header">
+            <h2>Chat</h2>
+            <div class="chat-header-actions">
+              <button class="chat-action-btn" title="设置">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="4" y1="21" x2="4" y2="14"/>
+                  <line x1="4" y1="10" x2="4" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="12"/>
+                  <line x1="12" y1="8" x2="12" y2="3"/>
+                  <line x1="20" y1="21" x2="20" y2="16"/>
+                  <line x1="20" y1="12" x2="20" y2="3"/>
+                  <line x1="1" y1="14" x2="7" y2="14"/>
+                  <line x1="9" y1="8" x2="15" y2="8"/>
+                  <line x1="17" y1="16" x2="23" y2="16"/>
+                </svg>
+              </button>
+              <button class="chat-action-btn" title="更多">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"/>
+                  <circle cx="19" cy="12" r="1"/>
+                  <circle cx="5" cy="12" r="1"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="chat-messages">
+            <!-- User Message -->
+            <div class="message user">
+              <div class="message-avatar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+              <div class="message-content">
+                <p>Actor Factory 这种按需组装专家的机制有什么具体优势?</p>
+              </div>
+            </div>
+
+            <!-- Assistant Message -->
+            <div class="message assistant">
+              <div class="message-avatar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                </svg>
+              </div>
+              <div class="message-content">
+                <p>根据 AIME 论文的内容，Actor Factory（执行者工厂）通过"动态执行者实例化"（Dynamic Actor Instantiation）机制，取代了传统多智能体系统中预定义固定角色的做法。</p>
+
+                <p>这种按需组装专家的机制有以下具体优势：</p>
+
+                <ol>
+                  <li><strong>降低认知负荷，提升专注度 (Precision & Focus)</strong> - 传统方法往往会将大量工具一次性塞给一个通用智能体，导致 LLM 在选择工具时容易出错或产生幻觉。</li>
+                  <li><strong>极强的可扩展性 (Extensibility)</strong> - 在静态角色系统中，如果遇到新类型的任务，往往需要重新设计或微调预定义的智能体角色。</li>
+                  <li><strong>角色与任务的完美匹配 (Tailored Fit)</strong> - Factory 不仅是分配工具，还会动态生成人设（Persona）上下文提示词（Prompt）。</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-input-wrapper">
+              <textarea class="chat-input" placeholder="Start typing..." rows="1"></textarea>
+              <span class="source-indicator" id="sourceIndicator">1 source</span>
+              <button class="send-btn" title="发送">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Context Menu - Project -->
+  <div class="context-menu" id="projectMenu">
+    <button class="context-menu-item" onclick="showToast('重命名项目')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      重命名
+    </button>
+    <div class="context-menu-divider"></div>
+    <button class="context-menu-item danger" onclick="showToast('删除项目')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      </svg>
+      删除项目
+    </button>
+  </div>
+
+  <!-- Context Menu - History Conversation -->
+  <div class="context-menu" id="historyMenu">
+    <div class="context-submenu">
+      <button class="context-menu-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        添加到项目
+        <svg class="context-submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+      <div class="submenu">
+        <button class="context-menu-item" onclick="showToast('添加到: 研究项目 A')">研究项目 A</button>
+        <button class="context-menu-item" onclick="showToast('添加到: 产品设计')">产品设计</button>
+        <button class="context-menu-item" onclick="showToast('添加到: 日常笔记')">日常笔记</button>
+      </div>
+    </div>
+    <button class="context-menu-item" onclick="showToast('重命名对话')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      重命名
+    </button>
+    <div class="context-menu-divider"></div>
+    <button class="context-menu-item danger" onclick="showToast('删除对话')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      </svg>
+      删除
+    </button>
+  </div>
+
+  <!-- Context Menu - Project Conversation -->
+  <div class="context-menu" id="projectConversationMenu">
+    <button class="context-menu-item" onclick="showToast('从项目移除')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 14l-5-5 5-5"/>
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>
+      </svg>
+      从项目移除
+    </button>
+    <button class="context-menu-item" onclick="showToast('重命名对话')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      重命名
+    </button>
+    <div class="context-menu-divider"></div>
+    <button class="context-menu-item danger" onclick="showToast('删除对话')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      </svg>
+      删除
+    </button>
+  </div>
+
+  <!-- New Project Modal -->
+  <div class="modal-overlay" id="newProjectModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>新建项目</h3>
+        <button class="modal-close" onclick="hideNewProjectModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="projectName">项目名称</label>
+          <input type="text" class="form-input" id="projectName" placeholder="输入项目名称...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideNewProjectModal()">取消</button>
+        <button class="btn btn-primary" onclick="createProject()">创建项目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Toggle sidebar
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+
+    // Toggle project expand/collapse
+    function toggleProject(projectId) {
+      const project = document.getElementById(projectId);
+      project.classList.toggle('expanded');
+    }
+
+    // Toggle sources panel
+    function toggleSourcesPanel() {
+      document.getElementById('sourcesPanel').classList.toggle('collapsed');
+    }
+
+    // Toggle file select
+    function toggleFileSelect(element) {
+      const checkbox = element.querySelector('.file-checkbox');
+      checkbox.checked = !checkbox.checked;
+      element.classList.toggle('selected', checkbox.checked);
+      updateSourceCount();
+    }
+
+    // Toggle select all
+    function toggleSelectAll() {
+      const selectAll = document.getElementById('selectAll');
+      const checkboxes = document.querySelectorAll('.file-list .file-checkbox');
+      const items = document.querySelectorAll('.file-source-item');
+
+      checkboxes.forEach((cb, i) => {
+        cb.checked = selectAll.checked;
+        items[i].classList.toggle('selected', selectAll.checked);
+      });
+      updateSourceCount();
+    }
+
+    // Update source count indicator
+    function updateSourceCount() {
+      const checked = document.querySelectorAll('.file-list .file-checkbox:checked').length;
+      const indicator = document.getElementById('sourceIndicator');
+      indicator.textContent = checked > 0 ? `${checked} source${checked > 1 ? 's' : ''}` : '';
+    }
+
+    // Show context menu
+    function showContextMenu(event, menuId) {
+      event.preventDefault();
+      hideAllMenus();
+
+      const menu = document.getElementById(menuId);
+      menu.style.left = event.clientX + 'px';
+      menu.style.top = event.clientY + 'px';
+      menu.classList.add('visible');
+    }
+
+    function showProjectMenu(event, projectId) {
+      showContextMenu(event, 'projectMenu');
+    }
+
+    function showHistoryMenu(event) {
+      showContextMenu(event, 'historyMenu');
+    }
+
+    function showProjectConversationMenu(event) {
+      showContextMenu(event, 'projectConversationMenu');
+    }
+
+    function hideAllMenus() {
+      document.querySelectorAll('.context-menu').forEach(menu => {
+        menu.classList.remove('visible');
+      });
+    }
+
+    // Modal functions
+    function showNewProjectModal() {
+      document.getElementById('newProjectModal').classList.add('visible');
+      document.getElementById('projectName').focus();
+    }
+
+    function hideNewProjectModal() {
+      document.getElementById('newProjectModal').classList.remove('visible');
+      document.getElementById('projectName').value = '';
+    }
+
+    function createProject() {
+      const name = document.getElementById('projectName').value.trim();
+      if (name) {
+        showToast(`项目 "${name}" 创建成功`);
+        hideNewProjectModal();
+      }
+    }
+
+    // Toast notification
+    function showToast(message) {
+      hideAllMenus();
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('visible');
+      setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2000);
+    }
+
+    // Close menus on click outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.context-menu')) {
+        hideAllMenus();
+      }
+    });
+
+    // Handle Enter key in modal
+    document.getElementById('projectName').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        createProject();
+      }
+    });
+
+    // Handle Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideAllMenus();
+        hideNewProjectModal();
+      }
+    });
+
+    // Auto-resize textarea
+    const textarea = document.querySelector('.chat-input');
+    textarea.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+  </script>
+</body>
+</html>

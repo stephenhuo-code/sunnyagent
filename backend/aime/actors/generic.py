@@ -14,31 +14,35 @@ from deepagents import create_deep_agent
 from backend.aime.models import Actor, SubtaskSpec
 from backend.llm import get_model
 from backend.skills import SKILL_REGISTRY, get_skill_summaries
-from backend.tools.file_tools import read_uploaded_file
+from backend.tools.file_tools import read_file
 from backend.tools.sandbox import execute_python, execute_python_with_file
 
 logger = logging.getLogger(__name__)
 
 
 _GENERIC_SYSTEM_PROMPT = """\
-You are a general-purpose AI assistant capable of handling various tasks.
+你是一个通用 AI 助手，能够处理各种任务。
 
-## Capabilities
+**重要：你必须始终用中文回复用户。**
 
-1. **Code Execution**: Use execute_python or execute_python_with_file to run Python code
-2. **File Reading**: Use read_uploaded_file to read user-uploaded files
-3. **Skill Activation**: Use activate_skill to load specialized instructions
+## 能力
 
-## Available Skills
+1. **代码执行**：使用 execute_python 或 execute_python_with_file 运行 Python 代码
+2. **文件读取**：使用 read_file 读取文件（支持上传文件和项目文件）
+   - 上传文件：read_file(file_id="...")
+   - 项目文件：read_file(file_id="...", project_id="...")
+3. **技能激活**：使用 activate_skill 加载专业指令
+
+## 可用技能
 
 {skills_section}
 
-## Guidelines
+## 指南
 
-- Break complex tasks into steps
-- Use code execution for calculations, data processing, file generation
-- Always include download links when generating files
-- Ask for clarification if the task is unclear
+- 将复杂任务分解为步骤
+- 使用代码执行进行计算、数据处理、文件生成
+- 生成文件时始终包含下载链接
+- 如果任务不清楚，请要求澄清
 """
 
 
@@ -81,7 +85,7 @@ def create_generic_actor(spec: SubtaskSpec | None = None) -> Actor:
     tools = [
         execute_python,
         execute_python_with_file,
-        read_uploaded_file,
+        read_file,  # Unified file reading tool
         activate_skill,
     ]
 

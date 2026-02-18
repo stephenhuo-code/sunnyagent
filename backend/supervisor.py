@@ -26,6 +26,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Checkpointer, Command
 
+from backend.aime.context import AgentContext
 from backend.llm import get_model
 from backend.registry import AGENT_REGISTRY, get_agent_descriptions
 
@@ -128,7 +129,7 @@ def get_aime_planner():
 async def stream_aime_response(
     thread_id: str,
     message: str,
-    context: dict[str, Any] | None = None,
+    context: AgentContext | dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream AIME response as SSE events.
 
@@ -138,7 +139,7 @@ async def stream_aime_response(
     Args:
         thread_id: Conversation thread ID
         message: User message
-        context: Optional context (may contain explicit_agent, file_ids, etc.)
+        context: AgentContext or legacy dict (for backwards compatibility)
 
     Yields:
         SSE event dicts compatible with stream_handler.py format

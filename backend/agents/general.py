@@ -21,7 +21,7 @@ from langchain_core.tools import tool
 from backend.llm import get_model
 from backend.registry import AGENT_REGISTRY, get_all_tools, register_agent
 from backend.skills import SKILL_REGISTRY, get_skill_summaries
-from backend.tools.file_tools import read_uploaded_file
+from backend.tools.file_tools import read_file
 from backend.tools.sandbox import execute_python, execute_python_with_file
 
 
@@ -48,32 +48,35 @@ def _build_general_prompt() -> str:
     """Build the general agent prompt with skill summaries."""
     skills_section = get_skill_summaries()
     return f"""\
-You are a general-purpose orchestration agent for complex, multi-step tasks.
+你是一个通用编排代理，负责处理复杂的多步骤任务。
 
-You have two strategies:
-1. **Direct**: Use your tools directly for simple sub-tasks.
-2. **Delegate**: Use the task() tool to delegate to specialist subagents for focused work.
+**重要：你必须始终用中文回复用户。**
 
-For complex, multi-step problems:
-- Break the problem into sub-tasks.
-- Decide which to handle yourself and which to delegate.
-- You can run multiple task() calls in parallel for independent sub-tasks.
-- Synthesize all results into a comprehensive final answer.
+## 策略
 
-Prefer delegation to specialists when their expertise matches the sub-task.
+你有两种策略：
+1. **直接处理**：对于简单的子任务，直接使用你的工具。
+2. **委托**：使用 task() 工具将任务委托给专业子代理。
 
-## File Generation Tools
+对于复杂的多步骤问题：
+- 将问题分解为子任务
+- 决定哪些自己处理，哪些委托
+- 对于独立的子任务，可以并行调用多个 task()
+- 综合所有结果，给出完整的最终答案
 
-When using `execute_python_with_file` to generate files (PPT, Word, Excel, PDF, etc.):
-- The tool returns a markdown download link on success
-- **IMPORTANT**: Always include the download link in your final response to the user
-- Format: After describing what you created, add the download link like:
-  "下载链接：[📥 点击下载 filename.pptx](/api/files/xxx/filename.pptx)"
+当专家的专业领域与子任务匹配时，优先委托给专家。
 
-## Available Skills
+## 文件生成工具
 
-Skills provide specialized instructions for specific tasks. When a user's request
-matches a skill description, use activate_skill() to load the full instructions.
+使用 `execute_python_with_file` 生成文件（PPT、Word、Excel、PDF 等）时：
+- 工具成功时会返回 markdown 下载链接
+- **重要**：始终在最终回复中包含下载链接
+- 格式："下载链接：[📥 点击下载 filename.pptx](/api/files/xxx/filename.pptx)"
+
+## 可用技能
+
+技能提供特定任务的专业指令。当用户请求匹配某个技能描述时，
+使用 activate_skill() 加载完整指令。
 
 {skills_section}"""
 
@@ -98,7 +101,7 @@ def build_general_agent():
         activate_skill,
         execute_python,
         execute_python_with_file,
-        read_uploaded_file,
+        read_file,  # Unified file reading tool (replaces read_uploaded_file, read_project_file)
     ]
 
     agent = create_deep_agent(
@@ -117,6 +120,6 @@ def build_general_agent():
         ),
         graph=agent,
         icon="sparkles",
-        capabilities=["code_execution", "file_generation", "orchestration", "multi_step"],
+        capabilities=["code_execution", "file_generation", "file_processing", "orchestration", "multi_step"],
         source="preset",
     )

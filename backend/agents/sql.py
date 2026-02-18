@@ -10,6 +10,7 @@ from langchain_community.utilities import SQLDatabase
 from backend.llm import get_model
 from backend.prompts import SQL_SUBAGENT_PROMPT
 from backend.registry import register_agent
+from backend.tools.file_tools import read_file
 
 _CHINOOK_DB = Path(__file__).resolve().parent.parent.parent / "chinook.db"
 _CHINOOK_URL = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
@@ -25,7 +26,8 @@ def _ensure_chinook_db(path: Path) -> Path:
 _db_path = _ensure_chinook_db(_CHINOOK_DB)
 _db = SQLDatabase.from_uri(f"sqlite:///{_db_path}", sample_rows_in_table_info=3)
 _model = get_model("sql")
-_tools = SQLDatabaseToolkit(db=_db, llm=_model).get_tools()
+_sql_tools = SQLDatabaseToolkit(db=_db, llm=_model).get_tools()
+_tools = _sql_tools + [read_file]  # 添加文件读取工具
 
 _agent = create_deep_agent(
     model=_model,

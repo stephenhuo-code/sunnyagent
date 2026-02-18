@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, ReactNode } from 'react';
-import { Plus, MessagesSquare, Settings, LogOut, User } from 'lucide-react';
+import { Plus, MessagesSquare, Settings, LogOut, User, FolderKanban } from 'lucide-react';
 import { SidebarHeader } from './SidebarHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { ConversationPopover } from '../Conversations/ConversationPopover';
@@ -22,6 +22,8 @@ interface SidebarProps {
   onSelectConversation?: (id: string) => void;
   onUpdateConversation?: (id: string, title: string) => Promise<void>;
   onDeleteConversation?: (id: string) => Promise<void>;
+  // Projects section
+  projectsSection?: ReactNode | ((collapsed: boolean) => ReactNode);
 }
 
 export function Sidebar({
@@ -35,6 +37,7 @@ export function Sidebar({
   onSelectConversation,
   onUpdateConversation,
   onDeleteConversation,
+  projectsSection,
 }: SidebarProps) {
   const { user, isAdmin, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(() => {
@@ -85,14 +88,38 @@ export function Sidebar({
           {!collapsed && <span>新建对话</span>}
         </button>
 
-        {/* Conversations Section */}
+        {/* Projects Section */}
+        {projectsSection && (
+          <div className="sidebar-section">
+            {collapsed ? (
+              <button
+                className="sidebar-btn"
+                title="项目"
+              >
+                <FolderKanban size={20} />
+              </button>
+            ) : (
+              <>
+                <div className="sidebar-section-header">
+                  <FolderKanban size={18} />
+                  <span>项目</span>
+                </div>
+                <div className="sidebar-section-content">
+                  {typeof projectsSection === 'function' ? projectsSection(collapsed) : projectsSection}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* History Section */}
         <div className="sidebar-section">
           {collapsed ? (
             /* Collapsed: Section header becomes clickable popover trigger */
             <button
               className="sidebar-btn conversation-popover-trigger"
               onClick={() => setPopoverOpen(true)}
-              title="查看对话列表"
+              title="历史对话"
             >
               <MessagesSquare size={20} />
             </button>
@@ -101,7 +128,7 @@ export function Sidebar({
             <>
               <div className="sidebar-section-header">
                 <MessagesSquare size={18} />
-                <span>对话列表</span>
+                <span>历史对话</span>
               </div>
               <div className="sidebar-section-content">
                 {typeof children === 'function' ? children(collapsed) : children}
