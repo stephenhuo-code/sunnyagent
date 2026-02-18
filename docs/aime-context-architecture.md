@@ -38,8 +38,9 @@ AIME 是 SunnyAgent 的核心决策引擎，负责：
 │ ┌─────────────────────────────────────────────────────────────────┐│
 │ │ Agent     │ 工具                                                ││
 │ │───────────│─────────────────────────────────────────────────────││
-│ │ sql       │ sql_db_query, sql_db_schema, sql_db_list_tables    ││
-│ │ research  │ tavily_search                                       ││
+│ │ sql       │ sql_db_query, sql_db_schema, sql_db_list_tables,   ││
+│ │           │ read_file                                           ││
+│ │ research  │ tavily_search, think_tool, read_file               ││
 │ │ general   │ task, read_file, execute_python, activate_skill    ││
 │ │ generic   │ read_file, execute_python, activate_skill          ││
 │ └─────────────────────────────────────────────────────────────────┘│
@@ -214,9 +215,10 @@ class AgentContext:
 │  │       files=FileContext(files=[FileInfo(file_id, filename, type, pid)]) │
 │  │   )                                                                      │
 │  │                                                                          │
-│  ├─ 构建上下文提示词并注入消息 (368-371行) ⚠️ 问题点                         │
+│  ├─ 构建上下文提示词并注入消息 (368-371行)                                   │
 │  │   context_prompt = context.build_context_prompt()                        │
 │  │   message = f"{context_prompt}\n\n---\n\n{user_message}"                 │
+│  │   ✅ 注意：此消息用于 Agent 执行，意图分析使用简化版本                    │
 │  │                                                                          │
 │  │   扩展后的消息示例：                                                     │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │
@@ -246,18 +248,10 @@ class AgentContext:
 │                                                                             │
 │  async def process(message, thread_id, context):                            │
 │                                                                             │
-│  ├─ 从 AgentContext 提取 context_dict (136-144行)                           │
-│  │   context_dict = {                                                       │
-│  │       "explicit_agent": context.explicit_agent,                         │
-│  │       "skill": context.skill,                                           │
-│  │       "user_id": context.session.user_id,                               │
-│  │       "project_id": context.session.project_id,                         │
-│  │   }                                                                      │
-│  │   ⚠️ 问题：没有传递 files 元数据到 context_dict                          │
-│  │                                                                          │
-│  ├─ 意图分析 (160行)                                                        │
-│  │   intent = await self.intent_analyzer.analyze(message, context_dict)    │
-│  │   ⚠️ 问题：message 是扩展后的消息，包含会污染意图分析的上下文            │
+│  ├─ 意图分析 (157行) - 直接传递 AgentContext                                │
+│  │   intent = await self.intent_analyzer.analyze(message, context)         │
+│  │   ✅ IntentAnalyzer 内部提取简化上下文（仅项目名、文件名）               │
+│  │   ✅ 不包含 file_id、project_id、read_file 工具提示                      │
 │  │                                                                          │
 │  └─ 根据 intent.action 路由                                                 │
 │      - "direct_reply" → _handle_direct_reply(message, ...)                 │
@@ -286,28 +280,7 @@ class AgentContext:
 │                           │ (如果不匹配，继续)                              │
 │                           ▼                                                 │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Priority 10: KeywordClassifier                                      │   │
-│  │ ─────────────────────────────────────────────────────────────────── │   │
-│  │ 在 message 中搜索关键词模式：                                        │   │
-│  │                                                                     │   │
-│  │ 直接回复模式：                                                       │   │
-│  │   (你好|hello|hi|谢谢|再见|...)                                     │   │
-│  │                                                                     │   │
-│  │ 研究模式：                                                           │   │
-│  │   (搜索|查找|最新|比较|怎么样|...)                                   │   │
-│  │                                                                     │   │
-│  │ 数据库模式：⚠️ 可能误匹配上下文中的 file_id, project_id              │   │
-│  │   (数据库|database|sql|表|table|记录|record|...)                    │   │
-│  │                                                                     │   │
-│  │ 复杂任务模式：                                                       │   │
-│  │   (并且|然后|第一|第二|报告|...)                                     │   │
-│  │                                                                     │   │
-│  │ 返回：IntentResult(action=xxx, capabilities=[...])                  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                           │ (如果不匹配，继续)                              │
-│                           ▼                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Priority 20: LLMClassifier                                          │   │
+│  │ Priority 10: LLMClassifier                                          │   │
 │  │ ─────────────────────────────────────────────────────────────────── │   │
 │  │ 使用 LLM 进行语义分析                                                │   │
 │  │                                                                     │   │
@@ -317,8 +290,9 @@ class AgentContext:
 │  │ - plan: 复杂任务分解                                                │   │
 │  │ - clarify: 需要澄清                                                 │   │
 │  │                                                                     │   │
-│  │ ⚠️ LLM 看到完整的扩展消息，可能误判意图                              │   │
-│  │   例如看到 file_id, project_id 误以为是数据库相关                    │   │
+│  │ 上下文感知：                                                         │   │
+│  │ - 如果用户选择了文件，会提示 LLM 这是文件相关任务                    │   │
+│  │ - LLM 根据语义判断任务类型和所需能力                                 │   │
 │  │                                                                     │   │
 │  │ 返回：IntentResult(action=xxx, confidence=x.x, capabilities=[...]) │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -340,13 +314,19 @@ class AgentContext:
 │     ┌───────────────────────────────────────────────────────────────┐      │
 │     │ Capabilities              │ Agent    │ 工具                   │      │
 │     │───────────────────────────│──────────│───────────────────────│      │
-│     │ ["database", "sql_query"] │ sql      │ SQLDatabaseToolkit    │      │
-│     │ ["web_search"]            │ research │ tavily_search         │      │
-│     │ ["code_execution"]        │ general  │ task, execute_python  │      │
+│     │ ["database", "sql_query"] │ sql      │ SQLDatabaseToolkit +  │      │
+│     │                           │          │ read_file             │      │
+│     │ ["web_search"]            │ research │ tavily_search +       │      │
+│     │                           │          │ read_file             │      │
+│     │ ["code_execution"]        │ general  │ task, execute_python, │      │
+│     │                           │          │ read_file             │      │
 │     └───────────────────────────────────────────────────────────────┘      │
 │                                                                             │
 │  3. Generic fallback                                                        │
 │     无匹配时创建 generic actor (有 read_file 工具)                          │
+│                                                                             │
+│  **注意**：所有专业 Agent 现在都配置了 read_file 工具，                       │
+│  确保在处理文件相关任务时能够正确读取文件内容。                               │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -366,15 +346,17 @@ class AgentContext:
 │  )                                                                          │
 │                                                                             │
 │  Agent 看到完整的上下文，包含 read_file 使用说明                             │
-│  ⚠️ 但如果路由到错误的 Agent（如 SQL），该 Agent 可能没有 read_file 工具    │
-│     导致 LLM 幻觉出工具调用                                                 │
+│  ✅ 所有专业 Agent（SQL、Research）现在都配置了 read_file 工具              │
+│     可以正确读取用户选择的文件                                              │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 当前问题：意图污染
+## 已修复问题
 
-### 问题场景
+### 问题 1：专业 Agent 文件访问
+
+#### 问题场景（已修复）
 
 用户选择项目文件后问"这两个文件有关系吗"：
 
@@ -403,28 +385,53 @@ class AgentContext:
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 误判过程
+#### 修复方案 ✅
 
+**为所有专业 Agent 添加 `read_file` 工具**
+
+| Agent | 修改前 | 修改后 |
+|-------|--------|--------|
+| SQL | SQLDatabaseToolkit | SQLDatabaseToolkit + read_file |
+| Research | tavily_search, think_tool | tavily_search, think_tool, read_file |
+| General | 已有 read_file | 无变化 |
+| Generic | 已有 read_file | 无变化 |
+
+**修改文件：**
+- `backend/agents/sql.py` - 添加 `read_file` 到工具列表
+- `backend/agents/research.py` - 添加 `read_file` 到工具列表
+
+### 问题 2：意图污染
+
+**解决方案**（`backend/aime/intent/analyzer.py`）：
+
+```python
+# IntentAnalyzer.analyze() 内部处理
+if isinstance(context, AgentContext):
+    # Extract semantic information only (no file_id, project_id, tool hints)
+    parts = []
+    if context.session.project_name:
+        parts.append(f"用户在项目「{context.session.project_name}」中工作")
+    if context.files.files:
+        file_names = [f"「{f.filename}」" for f in context.files.files]
+        parts.append(f"用户选择了文件: {', '.join(file_names)}")
+
+    intent_context_str = "。".join(parts) + "。\n\n"
+
+# 构建简化的意图分析消息
+intent_message = f"{intent_context_str}{message}"
 ```
-LLMClassifier 分析过程：
-├─ 看到: file_id, project_id, read_file
-├─ 推断: 涉及数据存取操作
-├─ 返回: capabilities=["database", "sql_query"]
-└─ 路由: SQL Agent
 
-后果：
-├─ SQL Agent 只有 SQLDatabaseToolkit 工具
-├─ 没有 read_file 工具
-├─ LLM 看到消息中的 read_file 指令
-├─ 尝试调用不存在的工具（幻觉）
-└─ 参数格式错误（file_path 而非 file_id）
-```
+**修复效果**：
 
-### 问题根源
+| 问题 | 状态 | 解决方式 |
+|------|------|---------|
+| 意图分析输入污染 | ✅ 已修复 | IntentAnalyzer 构建独立的 `intent_message` |
+| context_dict 信息缺失 | ✅ 已修复 | 直接传递 AgentContext，内部提取所需信息 |
+| 上下文注入时机错误 | ✅ 已修复 | 意图分析使用简化消息，执行阶段使用完整消息 |
 
-1. **意图分析输入污染**：`message` 包含了不应该用于意图判断的上下文信息
-2. **context_dict 信息缺失**：没有传递结构化的文件元数据供意图分析使用
-3. **上下文注入时机错误**：在意图分析之前就注入了执行阶段才需要的信息
+**关键设计**：
+- 意图分析：只看项目名和文件名（语义信息）
+- Agent 执行：看完整上下文（含 file_id、read_file 工具提示）
 
 ## 组件文件位置
 
@@ -434,9 +441,10 @@ LLMClassifier 分析过程：
 | Context 管理 | `backend/aime/context_manager.py` | 任务间上下文存储和检索 (Layer 4) |
 | 意图分析器 | `backend/aime/intent/analyzer.py` | IntentAnalyzer 分类器链协调 |
 | 规则分类器 | `backend/aime/intent/classifiers/rule_based.py` | 显式路由检测 |
-| 关键词分类器 | `backend/aime/intent/classifiers/keyword_based.py` | 快速模式匹配 |
-| LLM 分类器 | `backend/aime/intent/classifiers/llm_based.py` | 语义分析 |
+| LLM 分类器 | `backend/aime/intent/classifiers/llm_based.py` | 语义分析（主要分类器） |
 | Planner | `backend/aime/planner.py` | 任务规划和执行协调 |
 | Actor 工厂 | `backend/aime/actor_factory.py` | Agent 选择和实例化 |
 | Generic Actor | `backend/aime/actors/generic.py` | 通用 Actor（有 read_file） |
+| SQL Agent | `backend/agents/sql.py` | SQL 查询 Agent（有 read_file） |
+| Research Agent | `backend/agents/research.py` | 研究 Agent（有 read_file） |
 | API 入口 | `backend/main.py` | 请求处理和 AgentContext 创建 |
