@@ -20,26 +20,71 @@ SunnyAgent — 一个全栈 Web 应用（FastAPI + React），使用 LangGraph S
 
 ## 核心架构模式
 
-### Supervisor + Deep Agents 模式
+### AIME 架构 (Autonomous Intent-driven Multi-agent Executor)
 
-核心模式是一个 **LangGraph StateGraph**，Supervisor 节点路由到专业子图节点：
+AIME 是系统的核心决策引擎，负责意图分析、任务规划、Agent 路由和上下文管理：
 
 ```
-User → Supervisor (LLM router with route() tool)
-         ├─ Direct answer (简单问题直接回答)
-         ├─ → "research" agent (Tavily 网络搜索)
-         ├─ → "sql" agent (SQL 数据库查询)
-         └─ → "general" agent (编排器，通过 task() 委托给专家)
+User → IntentAnalyzer (Rule → LLM 分类器链)
+         ↓
+       AIMEPlanner
+         ├─ direct_reply (简单问题直接回答)
+         ├─ delegate → ActorFactory → 单个 Agent 执行
+         ├─ plan → 任务分解 → 并行执行多个 Agent
+         └─ clarify (需要澄清)
 ```
 
 **关键组件：**
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
-| Supervisor | `backend/supervisor.py` | 使用 `route` 工具返回 `Command(goto=agent_name)` 跳转到专业子图 |
+| IntentAnalyzer | `backend/aime/intent/analyzer.py` | 分类器链协调，提取简化上下文避免意图污染 |
+| AIMEPlanner | `backend/aime/planner.py` | 任务分解、执行循环、重规划 |
+| ActorFactory | `backend/aime/actor_factory.py` | 根据能力匹配选择 Agent |
+| ProgressManager | `backend/aime/progress_manager.py` | 任务状态追踪、DAG 依赖管理 |
+| ContextManager | `backend/aime/context_manager.py` | 任务间上下文传递、LRU 缓存 + PostgreSQL 持久化 |
 | Agent Registry | `backend/registry.py` | 中央 `AGENT_REGISTRY` 字典，Agent 通过 `register_agent()` 自注册 |
 | Deep Agents | `backend/agents/` | 每个专家使用 `create_deep_agent()` 创建，有独立的中间件栈 |
 | Package Agents | `backend/agents/loader.py` | 扫描 `packages/` 目录加载 Agent 包 |
+
+### 6 层 LLM Context 架构
+
+系统采用分层 Context 架构，每层有明确的职责和生命周期：
+
+| 层级 | 名称 | 位置 | 生命周期 |
+|------|------|------|----------|
+| Layer 1 | System Prompt | 各 Agent 代码 | Agent 创建时固定 |
+| Layer 2 | Tool Schemas | @tool 装饰器 | LangChain 自动管理 |
+| Layer 3 | SessionMetadata | `backend/aime/context.py` | 单次请求 |
+| Layer 4 | ContextManager | `backend/aime/context_manager.py` | 滑动过期（7天） |
+| Layer 5 | FileContext | `backend/aime/context.py` | 单次请求 |
+| Layer 6 | Message Buffer | LangGraph Checkpoints | 持久化存储 |
+
+**各 Agent 的工具配置：**
+
+| Agent | 工具 |
+|-------|------|
+| sql | sql_db_query, sql_db_schema, sql_db_list_tables, read_file |
+| research | tavily_search, think_tool, read_file |
+| general | task, read_file, execute_python, activate_skill |
+| generic | read_file, execute_python, activate_skill |
+
+**Context 聚合 - AgentContext：**
+
+```python
+@dataclass
+class AgentContext:
+    session: SessionMetadata    # Layer 3: user_id, thread_id, project_id
+    files: FileContext          # Layer 5: 文件元数据（非内容）
+    memory_ids: list[str]       # Layer 4: 引用 ContextManager 中的记忆块
+    explicit_agent: str | None  # 强制路由到指定 Agent
+    skill: str | None           # 注入技能指令
+```
+
+**关键设计**：
+- 意图分析：只看项目名和文件名（简化的语义信息）
+- Agent 执行：看完整上下文（含 file_id、read_file 工具提示）
+- 文件内容：通过 read_file 工具按需读取，不预加载
 
 ### Streaming Pipeline
 
@@ -63,9 +108,12 @@ PostgreSQL 作为主数据库，通过 asyncpg 连接池管理：
 | 表 | 说明 |
 |----|------|
 | `users` | 用户账户（角色：admin/user，状态：active/disabled） |
-| `conversations` | 用户对话，thread_id 映射到 LangGraph checkpoints |
+| `conversations` | 用户对话，thread_id 映射到 LangGraph checkpoints，可关联 project_id |
+| `projects` | 用户项目，包含名称、描述、文件关联 |
+| `project_files` | 项目文件元数据，存储路径和文件信息 |
 | `files` | 上传文件元数据，关联用户和对话 |
 | `langgraph_checkpoints` | LangGraph 状态持久化（自动管理） |
+| `task_contexts` | 任务间上下文存储（ContextManager 持久化） |
 
 - **连接池**: `backend/db.py` - 全局 asyncpg 池，2-10 连接
 - **Thread ID**: 8 字符十六进制字符串（`uuid4().hex[:8]`）
@@ -237,6 +285,20 @@ API → Agent → Service → Repository → Database
 | `/api/files/{id}/download` | GET | User | 下载上传的文件 |
 | `/api/files/{id}/content` | GET | User | 预览文本文件内容 |
 
+### 项目管理
+
+| 端点 | 方法 | 认证 | 说明 |
+|------|------|------|------|
+| `/api/projects` | GET | User | 列出用户项目 |
+| `/api/projects` | POST | User | 创建新项目 |
+| `/api/projects/{id}` | GET | User | 获取项目详情 |
+| `/api/projects/{id}` | PATCH | User | 更新项目 |
+| `/api/projects/{id}` | DELETE | User | 删除项目 |
+| `/api/projects/{id}/files` | GET | User | 列出项目文件 |
+| `/api/projects/{id}/files` | POST | User | 上传项目文件 |
+| `/api/projects/{id}/files/{file_id}` | DELETE | User | 删除项目文件 |
+| `/api/projects/{id}/files/{file_id}/download` | GET | User | 下载项目文件 |
+
 ---
 
 ## 添加新 Agent
@@ -307,6 +369,20 @@ sunnyagent/
 │   ├── supervisor.py        # LangGraph supervisor 路由
 │   ├── registry.py          # Agent 注册表
 │   ├── stream_handler.py    # LangGraph → SSE 转换
+│   ├── aime/                # AIME 核心（意图分析+任务规划）
+│   │   ├── context.py       # AgentContext, FileContext, SessionMetadata
+│   │   ├── context_manager.py # 任务间上下文存储和检索
+│   │   ├── planner.py       # AIMEPlanner 任务规划和执行
+│   │   ├── actor_factory.py # Agent 选择和实例化
+│   │   ├── progress_manager.py # 任务状态追踪
+│   │   ├── intent/          # 意图分析
+│   │   │   ├── analyzer.py  # IntentAnalyzer 分类器链
+│   │   │   ├── models.py    # IntentResult 等模型
+│   │   │   └── classifiers/ # 分类器实现
+│   │   │       ├── rule_based.py  # 显式路由检测
+│   │   │       └── llm_based.py   # LLM 语义分析
+│   │   └── actors/          # 动态 Actor
+│   │       └── generic.py   # 通用 Actor
 │   ├── auth/                # 认证模块
 │   │   ├── models.py        # User, Login 等 Pydantic 模型
 │   │   ├── security.py      # 密码哈希, JWT
@@ -317,9 +393,13 @@ sunnyagent/
 │   │   ├── models.py        # Conversation Pydantic 模型
 │   │   ├── database.py      # Conversation CRUD
 │   │   └── router.py        # Conversation API 端点
+│   ├── projects/            # 项目管理
+│   │   ├── models.py        # Project, ProjectFile 模型
+│   │   ├── database.py      # Project CRUD
+│   │   └── router.py        # Project API 端点
 │   ├── agents/              # Deep agents
-│   │   ├── research.py      # 网络研究 agent
-│   │   ├── sql.py           # SQL 数据库 agent
+│   │   ├── research.py      # 网络研究 agent（有 read_file）
+│   │   ├── sql.py           # SQL 数据库 agent（有 read_file）
 │   │   ├── general.py       # 通用编排器
 │   │   └── loader.py        # Package agent 加载器
 │   ├── services/            # 业务逻辑层
@@ -329,7 +409,7 @@ sunnyagent/
 │   ├── tools/               # Agent 工具
 │   │   ├── container_pool.py # Docker 容器池
 │   │   ├── sandbox.py       # 代码执行
-│   │   └── file_tools.py    # 文件解析
+│   │   └── file_tools.py    # 文件解析（read_file 统一工具）
 │   └── skills/              # 技能系统
 │       ├── registry.py      # 技能注册表
 │       └── loader.py        # 技能加载器
@@ -338,15 +418,18 @@ sunnyagent/
 │   │   ├── client.ts        # SSE 聊天客户端
 │   │   ├── auth.ts          # Auth API
 │   │   ├── conversations.ts # Conversations API
+│   │   ├── projects.ts      # Projects API
 │   │   └── users.ts         # 用户管理 API
 │   ├── hooks/               # React hooks
 │   │   ├── useChat.ts       # 聊天状态管理
 │   │   ├── useAuth.ts       # Auth context
-│   │   └── useConversations.ts
+│   │   ├── useConversations.ts
+│   │   └── useProjects.ts   # 项目状态管理
 │   └── components/
 │       ├── Auth/            # 登录页面
 │       ├── Layout/          # MainLayout, Sidebar
 │       ├── Conversations/   # 对话列表/项
+│       ├── Projects/        # 项目管理组件
 │       ├── Admin/           # 用户管理 (admin)
 │       ├── ChatContainer.tsx
 │       ├── MessageList.tsx
@@ -355,6 +438,11 @@ sunnyagent/
 ├── infra/
 │   ├── alembic.ini          # Alembic 配置
 │   └── migrations/          # 数据库迁移
+│       └── versions/
+│           ├── 001_create_users_table.py
+│           ├── 002_create_conversations_table.py
+│           ├── 003_create_task_contexts_table.py
+│           └── 004_create_projects_table.py
 ├── docker-compose.yml       # PostgreSQL 服务
 ├── packages/                # Package agents (AGENTS.md)
 └── skills/                  # 全局 skills (SKILL.md)
@@ -388,3 +476,4 @@ sunnyagent/
 
 - `CLAUDE.md` — Claude Code 用户指南（包含开发命令）
 - `docs/ai-dev-best-practices.md` — AI 协作开发最佳实践
+- `docs/roadmap.md` — 产品规划和功能路线图
