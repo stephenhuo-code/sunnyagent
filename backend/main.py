@@ -5,7 +5,6 @@ import atexit
 import logging
 import os
 import signal
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,36 +17,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from sse_starlette.sse import EventSourceResponse
 
 # Load environment variables early
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from backend.supervisor import build_supervisor, stream_aime_response
-from backend.registry import AGENT_REGISTRY
-from backend.skills import SKILL_REGISTRY
-from backend.models import ChatRequest, ThreadCreate
-from backend.stream_handler import stream_agent_response
+from backend.supervisor import build_supervisor
 from backend.tools.container_pool import get_pool, shutdown_pool, cleanup_all_sunnyagent_containers
-from backend.auth.router import router as auth_router, users_router
-from backend.auth.dependencies import get_current_user
-from backend.auth.models import UserInfo
-from backend.conversations.router import router as conversations_router
-from backend.projects.router import router as projects_router
-from backend.conversations.database import touch_conversation, get_conversation_by_thread, create_conversation
 from backend.auth.database import init_default_admin
 from backend.db import init_pool, close_pool, init_tables
-from backend.files import database as files_db
 from backend.llm import validate_config, get_current_provider
 from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVAL
-from backend.aime.context import AgentContext, SessionMetadata, FileContext, FileInfo, get_file_type
-
-# Environment variables already loaded above
+from backend.api import register_routers
+from backend.core.chat import set_agent
 
 # Global state
 _agent = None
@@ -57,7 +43,7 @@ _cleanup_task = None
 
 
 def _sync_cleanup():
-    """同步清理，用于 atexit 和信号处理"""
+    """Synchronous cleanup for atexit and signal handlers."""
     import asyncio
     try:
         loop = asyncio.new_event_loop()
@@ -68,32 +54,16 @@ def _sync_cleanup():
 
 
 def _signal_handler(signum, frame):
-    """处理终止信号"""
+    """Handle termination signals."""
     logger.info(f"Received signal {signum}, cleaning up...")
     _sync_cleanup()
     raise SystemExit(0)
 
 
-# 注册处理器
+# Register handlers
 atexit.register(_sync_cleanup)
 signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
-
-
-async def _create_checkpointer():
-    """Create the appropriate checkpointer based on environment."""
-    database_url = os.getenv("DATABASE_URL")
-
-    if database_url:
-        # Use PostgreSQL for production
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        logger.info("Using PostgreSQL checkpointer")
-        return await AsyncPostgresSaver.from_conn_string(database_url)
-    else:
-        # Fall back to SQLite for development
-        logger.info("Using SQLite checkpointer (no DATABASE_URL set)")
-        db_path = Path(__file__).resolve().parent.parent / "threads.db"
-        return await AsyncSqliteSaver.from_conn_string(str(db_path)).__aenter__()
 
 
 async def _context_cleanup_task(context_manager: ContextManager):
@@ -123,7 +93,7 @@ async def lifespan(app: FastAPI):
         raise
 
     # Log AIME architecture status
-    logger.info("🚀 AIME architecture enabled - intent-driven multi-agent execution")
+    logger.info("AIME architecture enabled - intent-driven multi-agent execution")
 
     # Initialize container pool
     try:
@@ -170,6 +140,8 @@ async def lifespan(app: FastAPI):
                 await saver.setup()
                 _checkpointer = saver
                 _agent = build_supervisor(checkpointer=_checkpointer)
+                # Set agent reference for chat router
+                set_agent(_agent)
                 yield
                 _agent = None
                 _checkpointer = None
@@ -183,6 +155,8 @@ async def lifespan(app: FastAPI):
         async with AsyncSqliteSaver.from_conn_string(str(db_path)) as saver:
             _checkpointer = saver
             _agent = build_supervisor(checkpointer=_checkpointer)
+            # Set agent reference for chat router
+            set_agent(_agent)
             yield
             _agent = None
             _checkpointer = None
@@ -212,438 +186,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routers
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(conversations_router)
-app.include_router(projects_router)
-
-
-@app.get("/api/agents")
-async def list_agents():
-    """Return agents that should appear in the UI selector."""
-    return [
-        {"name": entry.name, "description": entry.description, "icon": entry.icon}
-        for entry in AGENT_REGISTRY.values()
-        if entry.show_in_selector
-    ]
-
-
-@app.get("/api/skills")
-async def list_skills():
-    """Return all registered skills (name + description only)."""
-    return [
-        {"name": entry.name, "description": entry.description}
-        for entry in SKILL_REGISTRY.values()
-    ]
-
-
-@app.get("/api/skills/{name}")
-async def get_skill(name: str):
-    """Return full skill details including instructions."""
-    if name not in SKILL_REGISTRY:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"Skill not found: {name}")
-    entry = SKILL_REGISTRY[name]
-    return {
-        "name": entry.name,
-        "description": entry.description,
-        "instructions": entry.load_instructions(),
-    }
-
-
-def get_uploaded_file_info(file_id: str) -> FileInfo | None:
-    """获取上传文件的元数据 (返回 FileInfo 对象)"""
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
-    if not file_dir.exists():
-        return None
-
-    files = list(file_dir.iterdir())
-    if not files:
-        return None
-
-    file_path = files[0]
-    return FileInfo(
-        file_id=file_id,
-        filename=file_path.name,
-        file_type=get_file_type(file_path.name),
-        project_id=None,
-    )
-
-
-async def get_project_file_info(file_id: str, project_id: str) -> FileInfo | None:
-    """获取项目文件的元数据 (返回 FileInfo 对象)"""
-    from backend.db import get_pool
-
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT pf.original_name, pf.file_id
-            FROM project_files pf
-            JOIN projects p ON pf.project_id = p.id
-            WHERE pf.file_id = $1
-              AND p.id = $2
-              AND p.is_deleted = FALSE
-            """,
-            file_id,
-            project_id,
-        )
-        if not row:
-            return None
-        return FileInfo(
-            file_id=file_id,
-            filename=row["original_name"],
-            file_type=get_file_type(row["original_name"]),
-            project_id=project_id,
-        )
-
-
-@app.post("/api/chat")
-async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_current_user)):
-    """Send a message and stream the agent's response as SSE events.
-
-    Routing priority:
-    1. If request.skill is set, inject skill instructions and use general agent
-    2. If request.agent is set, route directly to that agent (skip supervisor)
-    3. Otherwise, use the supervisor for intent-based routing
-
-    Context model:
-    - Files are passed as metadata only (not content) to avoid intent pollution
-    - Agent uses read_file tool to get actual content when needed
-    """
-    message = request.message
-
-    # Check if this thread has an associated conversation
-    # If not, create one (for threads created before conversation management was added)
-    existing_conv = await get_conversation_by_thread(request.thread_id, current_user.id)
-    if existing_conv:
-        # Update the conversation's updated_at timestamp
-        await touch_conversation(request.thread_id, current_user.id)
-    else:
-        # Create a new conversation for this thread (auto-title from first 50 chars of message)
-        title = request.message[:50] if request.message else "New Conversation"
-        # Parse project_id if provided
-        project_uuid = None
-        if request.project_id:
-            try:
-                project_uuid = uuid.UUID(request.project_id)
-            except ValueError:
-                logger.warning(f"Invalid project_id format: {request.project_id}")
-        try:
-            await create_conversation(current_user.id, request.thread_id, title, project_uuid)
-        except Exception as e:
-            logger.warning(f"Failed to create conversation for thread {request.thread_id}: {e}")
-
-    # Build AgentContext with file metadata (NOT content) - Layer 3 & 5
-    files: list[FileInfo] = []
-
-    # Collect uploaded file metadata
-    if request.file_ids:
-        for file_id in request.file_ids:
-            info = get_uploaded_file_info(file_id)
-            if info:
-                files.append(info)
-
-    # Collect project file metadata
-    if request.project_file_ids and request.project_id:
-        for file_id in request.project_file_ids:
-            info = await get_project_file_info(file_id, request.project_id)
-            if info:
-                files.append(info)
-
-    # Create AgentContext
-    context = AgentContext(
-        session=SessionMetadata(
-            user_id=str(current_user.id),
-            thread_id=request.thread_id,
-            project_id=request.project_id,
-        ),
-        files=FileContext(files=files),
-        explicit_agent=request.agent if request.agent and request.agent in AGENT_REGISTRY else None,
-        skill=request.skill,
-    )
-
-    # Note: Context is NOT injected into message here to avoid intent pollution.
-    # Context will be injected at execution time in planner.py (_handle_delegate, _handle_plan)
-    if files:
-        logger.info(f"Context: {len(files)} files (will be injected at execution time)")
-
-    # Skill-based routing: inject skill instructions into the message
-    if request.skill and request.skill in SKILL_REGISTRY:
-        skill_instructions = SKILL_REGISTRY[request.skill].load_instructions()
-        message = f"[SKILL: {request.skill}]\n{skill_instructions}\n---\nUser request: {message}"
-
-    # Direct agent routing: /command → inject directive for supervisor to route
-    if request.agent and request.agent in AGENT_REGISTRY:
-        message = f"[ROUTE_TO: {request.agent}]\n{message}"
-
-    async def event_generator():
-        try:
-            # Use AIME architecture for intent-driven routing
-            # Pass AgentContext for structured context handling
-            async for event in stream_aime_response(
-                thread_id=request.thread_id,
-                message=message,
-                context=context,
-            ):
-                yield event
-        except Exception:
-            logger.exception("Error streaming agent response")
-
-    return EventSourceResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        ping=15,  # Keepalive every 15 seconds
-    )
-
-
-@app.post("/api/threads")
-async def create_thread(current_user: UserInfo = Depends(get_current_user)) -> ThreadCreate:
-    """Create a new thread and return its ID.
-
-    Note: The thread itself is just an ID. The conversation record
-    is created when the first message is sent in /api/chat.
-    """
-    thread_id = uuid.uuid4().hex[:8]
-    return ThreadCreate(thread_id=thread_id)
-
-
-@app.get("/api/threads/{thread_id}/history")
-async def get_thread_history(
-    thread_id: str,
-    current_user: UserInfo = Depends(get_current_user)
-):
-    """Get message history for a thread.
-
-    Permission: User must own the conversation associated with this thread.
-    """
-    # Verify that the thread belongs to the current user via conversation
-    conversation = await get_conversation_by_thread(thread_id, current_user.id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Thread not found")
-
-    if _agent is None:
-        return {"messages": []}
-
-    config = {"configurable": {"thread_id": thread_id}}
-    try:
-        state = await _agent.aget_state(config)
-        if state and state.values:
-            messages = []
-            for msg in state.values.get("messages", []):
-                role = "user" if msg.type == "human" else "assistant"
-                if msg.type in ("human", "ai"):
-                    # Extract text from content blocks (Claude returns list of content blocks)
-                    if isinstance(msg.content, str):
-                        content = msg.content
-                    elif isinstance(msg.content, list):
-                        parts = []
-                        for item in msg.content:
-                            if isinstance(item, dict) and item.get("type") == "text":
-                                parts.append(item.get("text", ""))
-                        content = "".join(parts)
-                    else:
-                        content = str(msg.content)
-                    messages.append({"role": role, "content": content})
-            return {"messages": messages}
-    except Exception:
-        pass
-    return {"messages": []}
-
-
-# File upload constants
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {
-    ".txt", ".md", ".json", ".csv",  # 文本文件
-    ".pdf",  # PDF
-    ".doc", ".docx",  # Word
-    ".ppt", ".pptx",  # PowerPoint
-    ".xls", ".xlsx",  # Excel
-}
-
-
-@app.post("/api/files/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    current_user: UserInfo = Depends(get_current_user)
-):
-    """Upload a file and return its metadata."""
-    # Validate file extension
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
-        )
-
-    # Read file content
-    content = await file.read()
-
-    # Validate file size
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
-        )
-
-    # Generate file ID and save
-    file_id = uuid.uuid4().hex[:8]
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
-    file_dir.mkdir(parents=True, exist_ok=True)
-    file_path = file_dir / (file.filename or "uploaded_file")
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    # Record file in database (if PostgreSQL is available)
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        try:
-            await files_db.create_file(
-                user_id=current_user.id,
-                file_id=file_id,
-                original_name=file.filename or "uploaded_file",
-                content_type=file.content_type,
-                size_bytes=len(content),
-                storage_path=str(file_path)
-            )
-        except Exception as e:
-            logger.warning(f"Failed to record file in database: {e}")
-
-    return {
-        "file_id": file_id,
-        "filename": file.filename,
-        "size": len(content),
-        "content_type": file.content_type or "application/octet-stream",
-        "download_url": f"/api/files/{file_id}/{file.filename}",
-    }
-
-
-@app.get("/api/files/{file_id}/download")
-async def download_file_by_id(
-    file_id: str,
-    current_user: UserInfo = Depends(get_current_user)
-):
-    """Download a file by its ID.
-
-    Permission: User must own the file.
-    """
-    # Check permission via database if PostgreSQL is available
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        file_record = await files_db.get_file(file_id, current_user.id)
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-        file_path = Path(file_record["storage_path"])
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-        return FileResponse(
-            str(file_path),
-            filename=file_record["original_name"],
-            media_type=file_record["content_type"] or "application/octet-stream",
-        )
-
-    # Fallback for SQLite mode (no permission check)
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
-    if not file_dir.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    files = list(file_dir.iterdir())
-    if not files:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    file_path = files[0]
-    return FileResponse(
-        str(file_path),
-        filename=file_path.name,
-        media_type="application/octet-stream",
-    )
-
-
-@app.get("/api/files/{file_id}/content")
-async def get_file_content(
-    file_id: str,
-    current_user: UserInfo = Depends(get_current_user)
-):
-    """Get file content for preview (text files only).
-
-    Permission: User must own the file.
-    """
-    # Check permission via database if PostgreSQL is available
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        file_record = await files_db.get_file(file_id, current_user.id)
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-        file_path = Path(file_record["storage_path"])
-    else:
-        # Fallback for SQLite mode (no permission check)
-        file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
-        if not file_dir.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-        files = list(file_dir.iterdir())
-        if not files:
-            raise HTTPException(status_code=404, detail="File not found")
-        file_path = files[0]
-
-    # Only support text file preview
-    text_extensions = {".txt", ".md", ".json", ".csv"}
-    if file_path.suffix.lower() not in text_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail="Preview not supported for this file type"
-        )
-
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except UnicodeDecodeError:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot read file as text"
-        )
-
-    return {"content": content, "filename": file_path.name}
-
-
-@app.get("/api/files/{file_id}/{filename}")
-async def download_file(
-    file_id: str,
-    filename: str,
-    current_user: UserInfo = Depends(get_current_user)
-):
-    """Download a generated file by file_id and filename.
-
-    Permission: User must own the file (if DB record exists).
-
-    Note: This route MUST be defined after /api/files/{file_id}/content
-    and /api/files/{file_id}/download to avoid path conflicts.
-
-    Bug fix: Check filesystem first, then validate ownership if DB record exists.
-    This handles cases where sandbox generates files without user_id in config.
-    """
-    file_path = f"/tmp/sunnyagent_files/{file_id}/{filename}"
-
-    # First check if file exists on filesystem
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # If database is available, check ownership (optional - file may not be registered)
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        file_record = await files_db.get_file(file_id, current_user.id)
-        # If DB record exists, use its filename; otherwise allow download anyway
-        # (handles sandbox-generated files not registered due to missing user_id)
-        if file_record:
-            filename = file_record.get("original_name", filename)
-
-    return FileResponse(
-        file_path,
-        filename=filename,
-        media_type="application/octet-stream",
-    )
-
+# Register all API routers
+register_routers(app)
 
 # Serve frontend static files in production
 _frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
