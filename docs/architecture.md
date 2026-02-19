@@ -475,5 +475,6 @@ sunnyagent/
 ## 相关文档
 
 - `CLAUDE.md` — Claude Code 用户指南（包含开发命令）
-- `docs/ai-dev-best-practices.md` — AI 协作开发最佳实践
+- `docs/api.md` — REST API 参考文档
 - `docs/roadmap.md` — 产品规划和功能路线图
+- `docs/ai-dev-best-practices.md` — AI 协作开发最佳实践
