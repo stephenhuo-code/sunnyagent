@@ -17,7 +17,7 @@
 
 /* Sidebar */
 .sidebar {
-  width: 280px;
+  width: 240px;
   background: var(--bg-hover);
   border-right: 1px solid var(--border);
   display: flex;
@@ -295,7 +295,7 @@
   position: fixed;
   left: 72px;
   top: 120px;
-  width: 300px;
+  width: 200px;
   max-height: 60vh;
   background: var(--bg);
   border: 1px solid var(--border);

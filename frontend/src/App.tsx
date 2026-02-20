@@ -323,6 +323,11 @@ function AppContent() {
         onUpdateConversation={conversations.update}
         onDeleteConversation={conversations.remove}
         onCreateProject={handleOpenCreateProjectModal}
+        projects={projects.projects}
+        projectsLoading={projects.isLoading}
+        projectsError={projects.error}
+        selectedProjectId={projects.selectedProjectId}
+        onSelectProject={handleSelectProject}
       >
         {currentView === "chat" && (
           <ChatContainer key={chatKey} initialThreadId={currentThreadId} />

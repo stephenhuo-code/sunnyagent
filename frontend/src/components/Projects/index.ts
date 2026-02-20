@@ -9,3 +9,4 @@ export { ProjectWorkspace } from './ProjectWorkspace';
 export { SourcesPanel } from './SourcesPanel';
 export { NewProjectModal } from './NewProjectModal';
 export { ProjectSelectMenu } from './ProjectSelectMenu';
+export { ProjectPopover } from './ProjectPopover';

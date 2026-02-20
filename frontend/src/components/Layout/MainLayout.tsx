@@ -5,6 +5,7 @@
 import { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import type { ConversationSummary } from '../../api/conversations';
+import type { ProjectSummary } from '../../api/projects';
 import './Layout.css';
 
 interface MainLayoutProps {
@@ -22,6 +23,12 @@ interface MainLayoutProps {
   onUpdateConversation?: (id: string, title: string) => Promise<void>;
   onDeleteConversation?: (id: string) => Promise<void>;
   onCreateProject?: () => void;
+  // Props for project popover
+  projects?: ProjectSummary[];
+  projectsLoading?: boolean;
+  projectsError?: string | null;
+  selectedProjectId?: string | null;
+  onSelectProject?: (id: string) => void;
 }
 
 export function MainLayout({
@@ -38,6 +45,11 @@ export function MainLayout({
   onUpdateConversation,
   onDeleteConversation,
   onCreateProject,
+  projects,
+  projectsLoading,
+  projectsError,
+  selectedProjectId,
+  onSelectProject,
 }: MainLayoutProps) {
   return (
     <div className="main-layout">
@@ -53,6 +65,11 @@ export function MainLayout({
         onDeleteConversation={onDeleteConversation}
         projectsSection={projectsSection}
         onCreateProject={onCreateProject}
+        projects={projects}
+        projectsLoading={projectsLoading}
+        projectsError={projectsError}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={onSelectProject}
       >
         {conversationList}
       </Sidebar>

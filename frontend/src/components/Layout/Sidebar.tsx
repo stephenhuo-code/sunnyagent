@@ -7,7 +7,9 @@ import { MessagesSquare, MessageSquarePlus, Settings, LogOut, User, FolderKanban
 import { SidebarHeader } from './SidebarHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { ConversationPopover } from '../Conversations/ConversationPopover';
+import { ProjectPopover } from '../Projects/ProjectPopover';
 import type { ConversationSummary } from '../../api/conversations';
+import type { ProjectSummary } from '../../api/projects';
 import './Layout.css';
 
 interface SidebarProps {
@@ -25,6 +27,12 @@ interface SidebarProps {
   // Projects section
   projectsSection?: ReactNode | ((collapsed: boolean) => ReactNode);
   onCreateProject?: () => void;
+  // Props for project popover when collapsed
+  projects?: ProjectSummary[];
+  projectsLoading?: boolean;
+  projectsError?: string | null;
+  selectedProjectId?: string | null;
+  onSelectProject?: (id: string) => void;
 }
 
 export function Sidebar({
@@ -40,6 +48,11 @@ export function Sidebar({
   onDeleteConversation,
   projectsSection,
   onCreateProject,
+  projects = [],
+  projectsLoading = false,
+  projectsError = null,
+  selectedProjectId = null,
+  onSelectProject,
 }: SidebarProps) {
   const { user, isAdmin, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(() => {
@@ -47,6 +60,7 @@ export function Sidebar({
     return saved === 'true';
   });
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -54,10 +68,11 @@ export function Sidebar({
     localStorage.setItem('sidebar-collapsed', String(collapsed));
   }, [collapsed]);
 
-  // Close popover when expanding sidebar
+  // Close popovers when expanding sidebar
   useEffect(() => {
     if (!collapsed) {
       setPopoverOpen(false);
+      setProjectPopoverOpen(false);
     }
   }, [collapsed]);
 
@@ -98,6 +113,10 @@ export function Sidebar({
     onSelectConversation?.(id);
   };
 
+  const handleProjectPopoverSelect = (id: string) => {
+    onSelectProject?.(id);
+  };
+
   const handlePopoverUpdate = async (id: string, title: string) => {
     await onUpdateConversation?.(id, title);
   };
@@ -116,7 +135,8 @@ export function Sidebar({
           <div className="sidebar-section">
             {collapsed ? (
               <button
-                className="sidebar-btn"
+                className="sidebar-btn project-popover-trigger"
+                onClick={() => setProjectPopoverOpen(true)}
                 title="项目"
               >
                 <FolderKanban size={20} />
@@ -189,6 +209,19 @@ export function Sidebar({
           onSelect={handlePopoverSelect}
           onUpdate={handlePopoverUpdate}
           onDelete={handlePopoverDelete}
+        />
+      )}
+
+      {/* Project Popover for collapsed mode */}
+      {collapsed && (
+        <ProjectPopover
+          projects={projects}
+          isLoading={projectsLoading}
+          error={projectsError}
+          selectedId={selectedProjectId}
+          isOpen={projectPopoverOpen}
+          onClose={() => setProjectPopoverOpen(false)}
+          onSelect={handleProjectPopoverSelect}
         />
       )}
 
