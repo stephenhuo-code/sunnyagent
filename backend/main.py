@@ -34,12 +34,15 @@ from backend.llm import validate_config, get_current_provider
 from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVAL
 from backend.api import register_routers
 from backend.core.chat import set_agent
+from backend.services.langfuse_service import get_langfuse_service, reset_langfuse_service
+from backend.checkpointer_store import set_checkpointer, clear_checkpointer
 
 # Global state
 _agent = None
 _checkpointer = None
 _context_manager = None
 _cleanup_task = None
+_langfuse_service = None
 
 
 def _sync_cleanup():
@@ -81,7 +84,7 @@ async def _context_cleanup_task(context_manager: ContextManager):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage agent and checkpointer lifecycle."""
-    global _agent, _checkpointer, _context_manager, _cleanup_task
+    global _agent, _checkpointer, _context_manager, _cleanup_task, _langfuse_service
 
     # Validate LLM configuration early (fail fast)
     try:
@@ -91,6 +94,16 @@ async def lifespan(app: FastAPI):
     except (ValueError, EnvironmentError) as e:
         logger.error(f"LLM configuration error: {e}")
         raise
+
+    # Initialize Langfuse observability (graceful degradation if unavailable)
+    try:
+        _langfuse_service = get_langfuse_service()
+        if _langfuse_service.enabled:
+            logger.info(f"Langfuse observability enabled at {_langfuse_service.base_url}")
+        else:
+            logger.info("Langfuse observability disabled (not configured or unavailable)")
+    except Exception as e:
+        logger.warning(f"Langfuse initialization failed: {e}, continuing without observability")
 
     # Log AIME architecture status
     logger.info("AIME architecture enabled - intent-driven multi-agent execution")
@@ -139,12 +152,19 @@ async def lifespan(app: FastAPI):
                 # Setup the checkpointer tables
                 await saver.setup()
                 _checkpointer = saver
+
+                # Set shared checkpointer for all agents
+                set_checkpointer(_checkpointer)
+
                 _agent = build_supervisor(checkpointer=_checkpointer)
                 # Set agent reference for chat router
                 set_agent(_agent)
                 yield
                 _agent = None
                 _checkpointer = None
+
+                # Clear shared checkpointer
+                clear_checkpointer()
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL checkpointer: {e}")
             raise
@@ -154,12 +174,19 @@ async def lifespan(app: FastAPI):
         db_path = Path(__file__).resolve().parent.parent / "threads.db"
         async with AsyncSqliteSaver.from_conn_string(str(db_path)) as saver:
             _checkpointer = saver
+
+            # Set shared checkpointer for all agents
+            set_checkpointer(_checkpointer)
+
             _agent = build_supervisor(checkpointer=_checkpointer)
             # Set agent reference for chat router
             set_agent(_agent)
             yield
             _agent = None
             _checkpointer = None
+
+            # Clear shared checkpointer
+            clear_checkpointer()
 
     # Cleanup
     if _cleanup_task:
@@ -169,6 +196,12 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         logger.info("Context cleanup task stopped")
+
+    # Flush Langfuse traces before shutdown
+    if _langfuse_service and _langfuse_service.enabled:
+        _langfuse_service.flush()
+        logger.info("Langfuse traces flushed")
+    reset_langfuse_service()
 
     if database_url:
         await close_pool()

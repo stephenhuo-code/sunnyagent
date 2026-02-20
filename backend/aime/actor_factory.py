@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.aime.models import Actor, SubtaskSpec
 from backend.registry import AGENT_REGISTRY, AgentEntry
+from backend.services.langfuse_service import get_langfuse_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,26 +52,68 @@ class ActorFactory:
             f"capabilities={spec.capabilities}"
         )
 
-        # Priority 1: Explicit agent specification
-        if spec.explicit_agent:
-            logger.info(f"[select_actor] Using explicit agent path")
-            return self._select_explicit_agent(spec)
+        # Create Langfuse span for actor selection
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        context_manager = None
+        span = None
 
-        # Priority 2: Capability matching
-        if spec.capabilities:
-            logger.info(f"[select_actor] Using capability matching path")
-            match = self.match_by_capabilities(spec.capabilities)
-            if match:
-                entry, score = match
-                logger.info(
-                    f"[select_actor] Selected '{entry.name}' via capability match "
-                    f"(score={score})"
+        if langfuse_client:
+            try:
+                context_manager = langfuse_client.start_as_current_observation(
+                    as_type="span",
+                    name="actor-factory-select",
+                    input={
+                        "explicit_agent": spec.explicit_agent,
+                        "capabilities": spec.capabilities,
+                        "description_preview": spec.description[:100] if spec.description else None,
+                    },
                 )
-                return self._create_actor_from_entry(entry, spec)
+                span = context_manager.__enter__()
+            except Exception:
+                pass
 
-        # Priority 3: Generic fallback
-        logger.info("[select_actor] Using generic fallback path")
-        return self.create_generic_actor(spec)
+        try:
+            # Priority 1: Explicit agent specification
+            if spec.explicit_agent:
+                logger.info(f"[select_actor] Using explicit agent path")
+                actor = self._select_explicit_agent(spec)
+                if span:
+                    span.update(output={"selected_actor": actor.name, "path": "explicit"})
+                return actor
+
+            # Priority 2: Capability matching
+            if spec.capabilities:
+                logger.info(f"[select_actor] Using capability matching path")
+                match = self.match_by_capabilities(spec.capabilities)
+                if match:
+                    entry, score = match
+                    logger.info(
+                        f"[select_actor] Selected '{entry.name}' via capability match "
+                        f"(score={score})"
+                    )
+                    actor = self._create_actor_from_entry(entry, spec)
+                    if span:
+                        span.update(output={
+                            "selected_actor": actor.name,
+                            "path": "capability_match",
+                            "score": score,
+                        })
+                    return actor
+
+            # Priority 3: Generic fallback
+            logger.info("[select_actor] Using generic fallback path")
+            actor = self.create_generic_actor(spec)
+            if span:
+                span.update(output={"selected_actor": actor.name, "path": "generic_fallback"})
+            return actor
+
+        finally:
+            if context_manager:
+                try:
+                    context_manager.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     def _select_explicit_agent(self, spec: SubtaskSpec) -> Actor:
         """Select explicitly specified agent.

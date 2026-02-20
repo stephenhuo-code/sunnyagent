@@ -2,8 +2,8 @@
  * Single project item in the sidebar with expandable conversations
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { FolderOpen, Folder, ChevronRight, ChevronDown, MoreVertical, MessageSquare, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { FolderOpen, Folder, ChevronRight, ChevronDown, MoreVertical, MessageSquare, Loader2, MessageSquarePlus, Pencil, Trash2, FolderMinus, Edit3 } from 'lucide-react';
 import type { ProjectSummary, ProjectConversationSummary } from '../../api/projects';
 import './Projects.css';
 
@@ -21,6 +21,9 @@ interface ProjectItemProps {
   onDelete: (id: string) => Promise<void>;
   onSelectConversation: (conversationId: string, projectId: string) => void;
   onRemoveConversation: (conversationId: string, projectId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
+  onRenameConversation?: (conversationId: string, title: string) => Promise<void>;
+  onAddConversation?: (projectId: string) => void;
 }
 
 export function ProjectItem({
@@ -37,14 +40,20 @@ export function ProjectItem({
   onDelete,
   onSelectConversation,
   onRemoveConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  onAddConversation,
 }: ProjectItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showConvMenu, setShowConvMenu] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState(project.name);
+  const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
+  const [newConvTitle, setNewConvTitle] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const convMenuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const convInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -66,6 +75,12 @@ export function ProjectItem({
       inputRef.current?.select();
     }
   }, [isRenaming]);
+
+  useEffect(() => {
+    if (renamingConvId) {
+      convInputRef.current?.select();
+    }
+  }, [renamingConvId]);
 
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -125,6 +140,43 @@ export function ProjectItem({
     setShowConvMenu(null);
     onRemoveConversation(conversationId, project.id);
   };
+
+  const handleDeleteConversation = (conversationId: string, title: string) => {
+    setShowConvMenu(null);
+    if (window.confirm(`确定要删除对话 "${title}" 吗？\n此操作不可恢复。`)) {
+      onDeleteConversation?.(conversationId);
+    }
+  };
+
+  const handleStartRenameConversation = useCallback((conversationId: string, currentTitle: string) => {
+    setShowConvMenu(null);
+    setRenamingConvId(conversationId);
+    setNewConvTitle(currentTitle);
+  }, []);
+
+  const handleConvRenameSubmit = useCallback(async () => {
+    if (!renamingConvId) return;
+    const trimmed = newConvTitle.trim();
+    const conv = conversations.find(c => c.id === renamingConvId);
+    if (trimmed && conv && trimmed !== conv.title) {
+      try {
+        await onRenameConversation?.(renamingConvId, trimmed);
+      } catch (err) {
+        console.error('Failed to rename conversation:', err);
+      }
+    }
+    setRenamingConvId(null);
+    setNewConvTitle('');
+  }, [renamingConvId, newConvTitle, conversations, onRenameConversation]);
+
+  const handleConvRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleConvRenameSubmit();
+    } else if (e.key === 'Escape') {
+      setRenamingConvId(null);
+      setNewConvTitle('');
+    }
+  }, [handleConvRenameSubmit]);
 
   // If a conversation in this project is selected, don't highlight the project itself
   const hasSelectedConversation = selectedConversationId && conversations.some(c => c.id === selectedConversationId);
@@ -190,8 +242,20 @@ export function ProjectItem({
 
           {showMenu && (
             <div className="project-menu">
-              <button onClick={handleRename}>重命名</button>
-              <button className="danger" onClick={handleDelete}>删除项目</button>
+              {onAddConversation && (
+                <button onClick={() => { setShowMenu(false); onAddConversation(project.id); }}>
+                  <MessageSquarePlus size={14} />
+                  新建对话
+                </button>
+              )}
+              <button onClick={handleRename}>
+                <Pencil size={14} />
+                重命名
+              </button>
+              <button className="danger" onClick={handleDelete}>
+                <Trash2 size={14} />
+                删除项目
+              </button>
             </div>
           )}
         </div>
@@ -214,12 +278,25 @@ export function ProjectItem({
               <div
                 key={conv.id}
                 className={`project-conversation-item ${conv.id === selectedConversationId ? 'selected' : ''}`}
-                onClick={() => onSelectConversation(conv.id, project.id)}
+                onClick={() => renamingConvId !== conv.id && onSelectConversation(conv.id, project.id)}
               >
                 <MessageSquare size={14} />
-                <span className="conversation-title" title={conv.title}>
-                  {conv.title}
-                </span>
+                {renamingConvId === conv.id ? (
+                  <input
+                    ref={convInputRef}
+                    className="conversation-rename-input"
+                    value={newConvTitle}
+                    onChange={(e) => setNewConvTitle(e.target.value)}
+                    onBlur={handleConvRenameSubmit}
+                    onKeyDown={handleConvRenameKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    maxLength={200}
+                  />
+                ) : (
+                  <span className="conversation-title" title={conv.title}>
+                    {conv.title}
+                  </span>
+                )}
 
                 <div className="conversation-menu-wrapper" ref={showConvMenu === conv.id ? convMenuRef : undefined}>
                   <button
@@ -231,9 +308,22 @@ export function ProjectItem({
 
                   {showConvMenu === conv.id && (
                     <div className="conversation-menu">
+                      {onRenameConversation && (
+                        <button onClick={() => handleStartRenameConversation(conv.id, conv.title)}>
+                          <Edit3 size={14} />
+                          重命名
+                        </button>
+                      )}
                       <button onClick={() => handleRemoveConversation(conv.id)}>
+                        <FolderMinus size={14} />
                         从项目移除
                       </button>
+                      {onDeleteConversation && (
+                        <button className="danger" onClick={() => handleDeleteConversation(conv.id, conv.title)}>
+                          <Trash2 size={14} />
+                          删除对话
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

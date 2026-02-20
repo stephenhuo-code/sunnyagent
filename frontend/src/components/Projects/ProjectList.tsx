@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { Plus, FolderPlus, Loader2 } from 'lucide-react';
+import { FolderPlus, Loader2 } from 'lucide-react';
 import { ProjectItem } from './ProjectItem';
 import { NewProjectModal } from './NewProjectModal';
 import type { ProjectSummary, ProjectConversationSummary } from '../../api/projects';
@@ -26,6 +26,11 @@ interface ProjectListProps {
   onLoadConversations: (projectId: string) => Promise<void>;
   onSelectConversation: (conversationId: string, projectId: string) => void;
   onRemoveConversation: (conversationId: string, projectId: string) => Promise<void>;
+  onDeleteConversation?: (conversationId: string) => Promise<void>;
+  onRenameConversation?: (conversationId: string, title: string) => Promise<void>;
+  onAddConversation?: (projectId: string) => void;
+  // External trigger to open create modal
+  openCreateModalTrigger?: number;
 }
 
 export function ProjectList({
@@ -44,10 +49,21 @@ export function ProjectList({
   onLoadConversations,
   onSelectConversation,
   onRemoveConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  onAddConversation,
+  openCreateModalTrigger,
 }: ProjectListProps) {
   const [showNewModal, setShowNewModal] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [loadedProjects, setLoadedProjects] = useState<Set<string>>(new Set());
+
+  // Open modal when external trigger changes (and is > 0)
+  useEffect(() => {
+    if (openCreateModalTrigger && openCreateModalTrigger > 0) {
+      setShowNewModal(true);
+    }
+  }, [openCreateModalTrigger]);
 
   const handleExpand = useCallback(async (projectId: string) => {
     setExpandedProjects((prev) => {
@@ -109,6 +125,9 @@ export function ProjectList({
               onDelete={onDeleteProject}
               onSelectConversation={onSelectConversation}
               onRemoveConversation={onRemoveConversation}
+              onDeleteConversation={onDeleteConversation}
+              onRenameConversation={onRenameConversation}
+              onAddConversation={onAddConversation}
             />
           ))
         )}
@@ -124,17 +143,6 @@ export function ProjectList({
 
   return (
     <div className="project-list">
-      <div className="project-list-header">
-        <span>项目</span>
-        <button
-          className="project-add-btn"
-          onClick={() => setShowNewModal(true)}
-          title="新建项目"
-        >
-          <Plus size={16} />
-        </button>
-      </div>
-
       {isLoading ? (
         <div className="project-loading">
           <Loader2 size={20} className="spin" />
@@ -167,6 +175,9 @@ export function ProjectList({
               onDelete={onDeleteProject}
               onSelectConversation={onSelectConversation}
               onRemoveConversation={onRemoveConversation}
+              onDeleteConversation={onDeleteConversation}
+              onRenameConversation={onRenameConversation}
+              onAddConversation={onAddConversation}
             />
           ))}
         </div>

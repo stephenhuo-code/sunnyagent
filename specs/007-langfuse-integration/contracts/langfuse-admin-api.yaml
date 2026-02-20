@@ -1,0 +1,226 @@
+openapi: 3.0.3
+info:
+  title: Langfuse Admin API Contract
+  description: |
+    SunnyAgent 与 Langfuse Admin API 的交互契约。
+    基于 Langfuse SCIM-compliant API。
+  version: 1.0.0
+
+servers:
+  - url: "{langfuse_base_url}"
+    variables:
+      langfuse_base_url:
+        default: http://localhost:3001
+        description: Langfuse 服务地址
+
+security:
+  - basicAuth: []
+
+paths:
+  /api/public/health:
+    get:
+      summary: Health Check
+      description: 检查 Langfuse 服务健康状态
+      operationId: healthCheck
+      security: []
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        "503":
+          description: 服务不可用
+
+  /api/public/scim/Users:
+    get:
+      summary: List Users
+      description: 列出组织中的所有用户
+      operationId: listUsers
+      responses:
+        "200":
+          description: 用户列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "401":
+          description: 认证失败
+        "403":
+          description: 权限不足
+
+    post:
+      summary: Create User
+      description: 创建新用户（如果邮箱不存在）
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: 用户创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: 请求参数错误
+        "401":
+          description: 认证失败
+        "409":
+          description: 用户已存在
+
+  /api/public/scim/Users/{userId}:
+    get:
+      summary: Get User
+      description: 获取指定用户信息
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 用户信息
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: 认证失败
+        "404":
+          description: 用户不存在
+
+    delete:
+      summary: Remove User
+      description: 从组织中移除用户（不删除用户账号）
+      operationId: removeUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 移除成功
+        "401":
+          description: 认证失败
+        "404":
+          description: 用户不存在
+
+  /api/public/organizations/memberships:
+    put:
+      summary: Update Memberships
+      description: 更新组织成员权限
+      operationId: updateMemberships
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipsRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "401":
+          description: 认证失败
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: |
+        使用 Langfuse 组织 API 密钥进行认证
+        Username: LANGFUSE_ORG_PUBLIC_KEY
+        Password: LANGFUSE_ORG_SECRET_KEY
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Langfuse 用户 ID
+        userName:
+          type: string
+          description: 用户名（通常是邮箱）
+        displayName:
+          type: string
+          description: 显示名称
+        emails:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              primary:
+                type: boolean
+        active:
+          type: boolean
+          description: 是否激活
+      required:
+        - id
+        - userName
+
+    CreateUserRequest:
+      type: object
+      properties:
+        userName:
+          type: string
+          description: 用户名（邮箱）
+        displayName:
+          type: string
+          description: 显示名称
+        emails:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              primary:
+                type: boolean
+      required:
+        - userName
+        - emails
+
+    UserListResponse:
+      type: object
+      properties:
+        totalResults:
+          type: integer
+        itemsPerPage:
+          type: integer
+        startIndex:
+          type: integer
+        Resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+
+    UpdateMembershipsRequest:
+      type: object
+      properties:
+        memberships:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+              role:
+                type: string
+                enum: [OWNER, ADMIN, MEMBER, VIEWER]

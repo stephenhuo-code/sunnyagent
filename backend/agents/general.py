@@ -23,6 +23,7 @@ from backend.registry import AGENT_REGISTRY, get_all_tools, register_agent
 from backend.skills import SKILL_REGISTRY, get_skill_summaries
 from backend.tools.file_tools import read_file
 from backend.tools.sandbox import execute_python, execute_python_with_file
+from backend.checkpointer_store import get_checkpointer
 
 
 @tool
@@ -110,6 +111,7 @@ def build_general_agent():
         subagents=subagent_specs,
         system_prompt=_build_general_prompt(),
         name="general",
+        checkpointer=get_checkpointer(),
     )
 
     register_agent(

@@ -20,6 +20,7 @@ from langchain_core.messages import SystemMessage
 
 from backend.db import get_pool
 from backend.llm import get_model
+from backend.services.langfuse_service import get_langfuse_service
 
 logger = logging.getLogger(__name__)
 
@@ -548,13 +549,51 @@ class ContextManager:
 ## 原文
 {content[:3000]}
 """
+        # Create Langfuse span for summary generation
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span_context = None
+
+        if langfuse_client:
+            try:
+                span_context = langfuse_client.start_as_current_observation(
+                    as_type="generation",
+                    name="context-summary-generation",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"content_length": len(content)},
+                )
+                span_context.__enter__()
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke([SystemMessage(content=prompt)])
-            return str(response.content)
+            summary = str(response.content)
+
+            # Update Langfuse span with output
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output={"summary": summary[:300]})
+                except Exception:
+                    pass
+
+            return summary
         except Exception as e:
             logger.error(f"[ContextManager] _generate_summary failed: {e}")
+            # Update Langfuse span with error
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output={"error": str(e)})
+                except Exception:
+                    pass
             # Fallback: truncate
             return content[:500]
+        finally:
+            if span_context:
+                try:
+                    span_context.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def _extract_key_data(self, content: str) -> dict[str, Any]:
         """Extract structured key data using LLM with fallback."""
@@ -568,6 +607,23 @@ class ContextManager:
 
 直接返回 JSON，不要其他文字。
 """
+        # Create Langfuse span for key data extraction
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span_context = None
+
+        if langfuse_client:
+            try:
+                span_context = langfuse_client.start_as_current_observation(
+                    as_type="generation",
+                    name="context-extract-key-data",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"content_length": len(content)},
+                )
+                span_context.__enter__()
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke([SystemMessage(content=prompt)])
             text = str(response.content)
@@ -576,10 +632,31 @@ class ContextManager:
                 text = text.split("```json")[1].split("```")[0]
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0]
-            return json.loads(text.strip())
+            key_data = json.loads(text.strip())
+
+            # Update Langfuse span with output
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output=key_data)
+                except Exception:
+                    pass
+
+            return key_data
         except Exception as e:
             logger.debug(f"[ContextManager] _extract_key_data failed: {e}")
+            # Update Langfuse span with error
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output={"error": str(e)})
+                except Exception:
+                    pass
             return {}
+        finally:
+            if span_context:
+                try:
+                    span_context.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def _classify_output_types(self, content: str) -> list[str]:
         """Classify output types using LLM with fallback."""
@@ -603,6 +680,23 @@ class ContextManager:
 ## 要求
 返回 JSON 数组，只包含匹配的类型，如 ["financial_report", "table"]
 """
+        # Create Langfuse span for output type classification
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span_context = None
+
+        if langfuse_client:
+            try:
+                span_context = langfuse_client.start_as_current_observation(
+                    as_type="generation",
+                    name="context-classify-output-types",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"content_length": len(content)},
+                )
+                span_context.__enter__()
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke([SystemMessage(content=prompt)])
             text = str(response.content)
@@ -614,10 +708,31 @@ class ContextManager:
             types = json.loads(text.strip())
             # Filter valid types
             valid_types = [t for t in types if t in OUTPUT_TYPES]
-            return valid_types if valid_types else ["raw_data"]
+            result = valid_types if valid_types else ["raw_data"]
+
+            # Update Langfuse span with output
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output={"output_types": result})
+                except Exception:
+                    pass
+
+            return result
         except Exception as e:
             logger.debug(f"[ContextManager] _classify_output_types failed: {e}")
+            # Update Langfuse span with error
+            if span_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_observation(output={"error": str(e)})
+                except Exception:
+                    pass
             return ["raw_data"]
+        finally:
+            if span_context:
+                try:
+                    span_context.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     def _extract_file_references(self, content: str) -> list[dict[str, str]]:
         """Extract file references from content.

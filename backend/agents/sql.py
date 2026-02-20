@@ -11,6 +11,7 @@ from backend.llm import get_model
 from backend.prompts import SQL_SUBAGENT_PROMPT
 from backend.registry import register_agent
 from backend.tools.file_tools import read_file
+from backend.checkpointer_store import get_checkpointer
 
 _CHINOOK_DB = Path(__file__).resolve().parent.parent.parent / "chinook.db"
 _CHINOOK_URL = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
@@ -34,6 +35,7 @@ _agent = create_deep_agent(
     tools=_tools,
     system_prompt=SQL_SUBAGENT_PROMPT,
     name="sql",
+    checkpointer=get_checkpointer(),
 )
 
 register_agent(

@@ -580,11 +580,18 @@ AI：正在生成本周工作周报...
 
 **目标**：实现对话质量监控和性能追踪
 
+**技术选型**：
+- **Langfuse**：开源 LLM 可观测性平台（19k+ GitHub stars）
+- 私有化部署，复用 SunnyAgent 的 PostgreSQL
+- MIT 许可证，可商用
+- GitHub: https://github.com/langfuse/langfuse
+
 **核心能力**：
-- 对话 Trace 追踪
-- Agent 调用链分析
-- Token 使用统计
-- 性能监控和优化建议
+- Trace 全链路追踪（LangChain/LangGraph 原生支持）
+- Prompt Playground 调试（LLM + Tool Calling）
+- Dataset + Experiment 评估（支持自定义任务函数调用真实 Agent）
+- LLM-as-a-Judge 自动评分
+- 性能监控和成本分析
 
 ### 012 - 飞书机器人
 
@@ -1093,7 +1100,7 @@ P5（远期规划）:
 2. **知识库内容**：优先上传哪类文档？SOP/检验标准/产品规格？
 3. **部署方式**：私有化部署还是 SaaS 模式？
 4. **飞书集成**：飞书机器人是否 v1.0 必须？优先级如何？
-5. **Langfuse**：是否自建还是使用 SaaS 版本？
+5. **Langfuse**：已确定使用 Langfuse 私有化部署，复用 PostgreSQL
 
 ---
 
@@ -1117,7 +1124,7 @@ specs/
 ├── 006-project-management/            # ✅ 完成 - 项目 CRUD、项目文件管理、项目对话、文件上传下载
 ├── 010-skill-management/              # 🔲 开发者 A (2天) - Skill CRUD、版本管理、启用/禁用
 ├── 025-custom-agent-management/       # 🔲 开发者 A (2天) - Agent CRUD、配置、启用/禁用
-├── 011-langfuse-integration/          # 🔲 开发者 D (2天) - 被 013 依赖
+├── 011-langfuse-integration/          # 🔲 开发者 D (2天) - 被 013 依赖，Langfuse 私有化部署
 │
 │  # P2 - 中优先级：平台能力层
 ├── 024-skill-creator/                 # 🔲 开发者 A (3天) - 对话式创建 Skill，依赖 010

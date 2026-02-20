@@ -135,6 +135,7 @@ body {
 /* ===== Message List ===== */
 .message-list {
   flex: 1;
+  min-height: 0; /* Critical: allows flex item to shrink below content size */
   overflow-y: auto;
   padding: 20px;
   scroll-behavior: smooth;

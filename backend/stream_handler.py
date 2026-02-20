@@ -142,6 +142,7 @@ async def stream_agent_response(
     message: str,
     user_id: str | None = None,
     task_id: str | None = None,
+    system_context: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream agent response as SSE events.
 
@@ -158,18 +159,29 @@ async def stream_agent_response(
     Args:
         agent: The compiled supervisor graph.
         thread_id: Thread ID for conversation persistence.
-        message: User message to send.
+        message: User message to send (clean, without context injection).
         user_id: Optional user ID for context.
         task_id: Optional parent task ID for associating tool calls with tasks.
                  When provided, all emitted tool_call events will include this task_id.
+        system_context: Optional context information (file metadata, session info) to pass
+                        to the agent as a separate system message. This avoids polluting
+                        the user message with metadata that shouldn't be persisted in history.
 
     Yields:
         SSE-formatted event dicts with sequential IDs for reconnection support.
     """
+    from langchain_core.messages import SystemMessage
+
     config: RunnableConfig = {"configurable": {"thread_id": thread_id, "user_id": user_id}}
 
-    # Checkpointer handles history automatically - just send the new message
-    stream_input: dict = {"messages": [HumanMessage(content=message)]}
+    # Build messages list - keep user message clean, add context as SystemMessage if provided
+    messages: list = []
+    if system_context:
+        messages.append(SystemMessage(content=f"当前上下文:\n{system_context}"))
+    messages.append(HumanMessage(content=message))
+
+    # Checkpointer handles history automatically - send the messages
+    stream_input: dict = {"messages": messages}
 
     # Event counter for SSE reconnection support (T011)
     event_counter = EventCounter()

@@ -21,6 +21,7 @@ interface MainLayoutProps {
   onSelectConversation?: (id: string) => void;
   onUpdateConversation?: (id: string, title: string) => Promise<void>;
   onDeleteConversation?: (id: string) => Promise<void>;
+  onCreateProject?: () => void;
 }
 
 export function MainLayout({
@@ -36,6 +37,7 @@ export function MainLayout({
   onSelectConversation,
   onUpdateConversation,
   onDeleteConversation,
+  onCreateProject,
 }: MainLayoutProps) {
   return (
     <div className="main-layout">
@@ -50,6 +52,7 @@ export function MainLayout({
         onUpdateConversation={onUpdateConversation}
         onDeleteConversation={onDeleteConversation}
         projectsSection={projectsSection}
+        onCreateProject={onCreateProject}
       >
         {conversationList}
       </Sidebar>

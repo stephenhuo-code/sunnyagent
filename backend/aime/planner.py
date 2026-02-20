@@ -12,13 +12,15 @@ Action handling:
 - clarify: Ask clarification questions
 """
 
+import asyncio
 import json
 import logging
 import time
+import traceback
 from typing import Any, AsyncGenerator
 from uuid import uuid4
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from backend.aime.actor_factory import ActorFactory
 from backend.aime.context import AgentContext
@@ -27,6 +29,7 @@ from backend.aime.intent import IntentAnalyzer, IntentResult
 from backend.aime.models import Actor, SubtaskSpec
 from backend.aime.progress_manager import ProgressManager
 from backend.llm import get_model
+from backend.services.langfuse_service import get_langfuse_service
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +154,33 @@ class AIMEPlanner:
             f"message='{message[:50]}...'"
         )
 
+        # Initialize Langfuse tracing context
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        trace_context = None
+
+        # Start Langfuse trace for this request
+        if langfuse_client:
+            try:
+                # Fallback: ensure user_id is not None for Langfuse
+                effective_user_id = self._current_user_id or f"anonymous-{thread_id[:8]}"
+
+                # Create trace (SDK v3: as_type="trace" works at runtime but pyright type stubs don't include it)
+                trace_context = langfuse_client.start_as_current_observation(
+                    as_type="trace",  # type: ignore[arg-type]
+                    name="aime-planner",
+                )
+                trace_context.__enter__()
+
+                # Use update_current_trace to set user_id and session_id (SDK v3 pattern)
+                langfuse_client.update_current_trace(
+                    user_id=effective_user_id,
+                    session_id=thread_id,
+                    input={"message": message[:500], "thread_id": thread_id},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to start Langfuse trace: {e}")
+
         try:
             # Analyze user intent - pass AgentContext directly
             # IntentAnalyzer will extract simplified context (no file_id, project_id)
@@ -199,10 +229,42 @@ class AIMEPlanner:
                     event_id += 1
                     yield event
 
+        except asyncio.TimeoutError as e:
+            # Handle timeout specifically - record partial trace
+            logger.warning(f"Timeout in AIMEPlanner.process: {e}")
+            yield _format_sse("error", {"message": "请求超时，请稍后重试"}, event_id)
+            event_id += 1
+
+            # Record timeout in Langfuse trace with partial status
+            if trace_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_trace(
+                        output={"error": "timeout", "partial": True},
+                    )
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.exception(f"Error in AIMEPlanner.process: {e}")
             yield _format_sse("error", {"message": str(e)}, event_id)
             event_id += 1
+
+            # Record error in Langfuse trace
+            if trace_context and langfuse_client:
+                try:
+                    langfuse_client.update_current_trace(
+                        output={"error": str(e)},
+                    )
+                except Exception:
+                    pass
+
+        finally:
+            # Always close Langfuse trace (ensures partial traces are recorded)
+            if trace_context:
+                try:
+                    trace_context.__exit__(None, None, None)
+                except Exception as e:
+                    logger.warning(f"Failed to close Langfuse trace: {e}")
 
         # Always emit done event
         yield _format_sse("done", {}, event_id)
@@ -230,29 +292,69 @@ class AIMEPlanner:
         logger.info(f"[_handle_direct_reply] Starting direct response generation")
         event_id = start_event_id
 
-        # Inject file context if available
-        reply_message = message
+        # Build messages list with context as SystemMessage (not injected into user message)
+        llm_messages: list[SystemMessage | HumanMessage] = [SystemMessage(content=_DIRECT_REPLY_PROMPT)]
+
+        # Add context as a separate SystemMessage to avoid polluting user message
         if self._current_context:
             context_prompt = self._current_context.build_context_prompt()
             if context_prompt:
-                reply_message = f"{context_prompt}\n\n---\n\n{message}"
-                logger.info("[_handle_direct_reply] Injected file context")
+                llm_messages.append(SystemMessage(content=f"当前上下文:\n{context_prompt}"))
+                logger.info("[_handle_direct_reply] Injected file context as SystemMessage")
 
-        messages = [
-            SystemMessage(content=_DIRECT_REPLY_PROMPT),
-            HumanMessage(content=reply_message),
-        ]
+        # User message stays clean (no context injection)
+        llm_messages.append(HumanMessage(content=message))
 
+        # Create Langfuse span for LLM generation
+        # NOTE: Using start_generation() instead of start_as_current_observation() to avoid
+        # context loss issues with async generators and type checking warnings.
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference
+
+        if langfuse_client:
+            try:
+                span = langfuse_client.start_generation(
+                    name="direct-reply-llm",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"message": message[:500]},
+                )
+            except Exception:
+                pass
+
+        output_text = ""
+        final_usage = None  # Collect final token usage (only last chunk has it)
         try:
             # Stream response from LLM
-            async for chunk in self._model.astream(messages):
+            async for chunk in self._model.astream(llm_messages):
                 if hasattr(chunk, "content") and chunk.content:
+                    # Handle both string and list content types
+                    content = chunk.content
+                    if isinstance(content, str):
+                        text_chunk = content
+                    elif isinstance(content, list):
+                        # For list content (multimodal), extract text parts
+                        text_chunk = "".join(
+                            str(item) if isinstance(item, str) else item.get("text", "")
+                            for item in content
+                            if isinstance(item, (str, dict))
+                        )
+                    else:
+                        text_chunk = str(content)
+
+                    output_text += text_chunk
                     yield _format_sse(
                         "text_delta",
-                        {"text": chunk.content},
+                        {"text": text_chunk},
                         event_id,
                     )
                     event_id += 1
+
+                # Extract token usage from chunk if available (last chunk contains usage)
+                if hasattr(chunk, "response_metadata"):
+                    metadata = chunk.response_metadata
+                    if "token_usage" in metadata:
+                        final_usage = metadata["token_usage"]
 
         except Exception as e:
             logger.exception(f"Error streaming direct reply: {e}")
@@ -261,6 +363,46 @@ class AIMEPlanner:
                 {"text": f"抱歉，生成回复时出错：{str(e)}"},
                 event_id,
             )
+            if span:
+                try:
+                    span.update(output={"error": str(e)})
+                except Exception:
+                    pass
+        finally:
+            if span:
+                try:
+                    output_data: dict[str, Any] = {"text": output_text[:500]}
+                    # Apply final token usage collected from last chunk
+                    if final_usage:
+                        span.update(
+                            output=output_data,
+                            usage={
+                                "input": final_usage.get("prompt_tokens", 0),
+                                "output": final_usage.get("completion_tokens", 0),
+                                "total": final_usage.get("total_tokens", 0),
+                            }
+                        )
+                    else:
+                        span.update(output=output_data)
+                    span.end()
+                except Exception:
+                    pass
+
+        # Persist direct reply messages to checkpoint for history retrieval
+        # This ensures "hello" type messages are saved even though they bypass LangGraph
+        if output_text:
+            try:
+                from backend.core.chat import get_agent
+                agent = get_agent()
+                if agent:
+                    config = {"configurable": {"thread_id": thread_id}}
+                    await agent.aupdate_state(
+                        config,
+                        {"messages": [HumanMessage(content=message), AIMessage(content=output_text)]}
+                    )
+                    logger.info(f"[_handle_direct_reply] Persisted messages to checkpoint")
+            except Exception as e:
+                logger.warning(f"[_handle_direct_reply] Failed to persist messages: {e}")
 
     async def _handle_clarify(
         self,
@@ -362,21 +504,22 @@ class AIMEPlanner:
             # Start task in progress manager
             self.progress_manager.start_task(spec.id, actor.name)
 
-            # Inject full context at execution time (file metadata with tool hints)
-            agent_message = message
+            # Get context prompt to pass as system_context (not injected into user message)
+            context_prompt = None
             if self._current_context:
                 context_prompt = self._current_context.build_context_prompt()
                 if context_prompt:
-                    agent_message = f"{context_prompt}\n\n---\n\n{message}"
-                    logger.info(f"[_handle_delegate] Injected context for execution")
+                    logger.info(f"[_handle_delegate] Will pass context as system_context")
 
             # Execute actor with task_id for tool call association
+            # Pass context as system_context to avoid polluting user message history
             start_time = time.time()
             result_text = ""  # Collect task output for final summary
             async for event in self._execute_actor(
-                actor, agent_message, thread_id, event_id,
+                actor, message, thread_id, event_id,
                 task_id=spec.id,
                 user_id=self._current_user_id,
+                system_context=context_prompt,
             ):
                 event_id += 1
                 # Ensure tool_call events are associated with this task
@@ -465,16 +608,19 @@ class AIMEPlanner:
         start_event_id: int,
         task_id: str | None = None,
         user_id: str | None = None,
+        system_context: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute actor and stream response.
 
         Args:
             actor: Actor to execute
-            message: User message
+            message: User message (clean, without context injection)
             thread_id: Thread ID
             start_event_id: Starting event ID
             task_id: Optional parent task ID for associating tool calls with this task
             user_id: Optional user ID for file registration and permissions
+            system_context: Optional context information to pass as SystemMessage.
+                           This avoids polluting user message history with metadata.
 
         Yields:
             SSE events from actor execution
@@ -492,7 +638,35 @@ class AIMEPlanner:
             )
             return
 
+        # Create Langfuse span for actor execution
+        # NOTE: Using start_span() instead of start_as_current_observation() to avoid
+        # context loss issues with async generators. The OpenTelemetry context is lost
+        # after yield statements, making update_current_observation() ineffective.
+        # See: https://github.com/langfuse/langfuse/issues/7226
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference (not context manager)
+
+        if langfuse_client:
+            try:
+                # Use start_span to get an independent span object
+                # This allows direct update() and end() calls without context dependency
+                span = langfuse_client.start_span(
+                    name=f"actor-execution-{actor.name}",
+                    input={
+                        "actor_name": actor.name,
+                        "message_preview": message[:200] if message else None,
+                        "task_id": task_id,
+                    },
+                )
+            except Exception:
+                pass
+
         # Stream from the actor's graph using existing stream_handler
+        error_occurred = None
+        collected_output = ""  # Collect text_delta events for Langfuse output
+        collected_tools: list[dict[str, Any]] = []  # Collect tool call info
+        event_count = 0  # Track event count
         try:
             async for event in stream_agent_response(
                 agent=actor.graph,
@@ -500,19 +674,73 @@ class AIMEPlanner:
                 message=message,
                 task_id=task_id,
                 user_id=user_id,
+                system_context=system_context,
             ):
                 # Re-emit events (excluding done, we handle that ourselves)
                 if event.get("event") != "done":
+                    event_type = event.get("event")
+                    event_count += 1
+
+                    # Collect text_delta content for Langfuse span output
+                    if event_type == "text_delta":
+                        try:
+                            data = json.loads(event.get("data", "{}"))
+                            collected_output += data.get("text", "")
+                        except Exception:
+                            pass
+
+                    # Collect tool call info
+                    elif event_type == "tool_call_start":
+                        try:
+                            data = json.loads(event.get("data", "{}"))
+                            collected_tools.append({
+                                "name": data.get("name"),
+                                "id": data.get("id"),
+                            })
+                        except Exception:
+                            pass
+
                     yield event
                     event_id += 1
 
         except Exception as e:
+            error_occurred = e
             logger.exception(f"Error executing actor {actor.name}: {e}")
             yield _format_sse(
                 "text_delta",
                 {"text": f"执行代理 {actor.name} 时出错：{str(e)}"},
                 event_id,
             )
+
+        finally:
+            # Close Langfuse span using direct span.update() and span.end()
+            # This avoids context loss issues with async generators
+            if span:
+                try:
+                    if error_occurred:
+                        span.update(output={"error": str(error_occurred)})
+                    else:
+                        # Build richer output data
+                        output_data: dict[str, Any] = {
+                            "status": "completed",
+                            "event_count": event_count,
+                        }
+
+                        # Add text output if available
+                        if collected_output:
+                            output_data["text"] = collected_output[:1000]
+
+                        # Add tool call summary if available
+                        if collected_tools:
+                            output_data["tools_used"] = [t["name"] for t in collected_tools[:10]]
+                            output_data["tool_count"] = len(collected_tools)
+
+                        span.update(output=output_data)
+
+                    # Explicitly end the span
+                    span.end()
+                except Exception as e:
+                    logger.warning(f"Failed to update/end Langfuse span: {e}")
 
     async def _handle_plan(
         self,
@@ -678,19 +906,21 @@ class AIMEPlanner:
                         if context_str:
                             task_message = f"{task_message}\n\n## 上下文信息（来自前置任务的输出）\n\n{context_str}\n\n## 注意\n请基于上述上下文信息完成当前任务，不要要求用户重新提供这些数据。"
 
-                        # Inject file context at execution time (file metadata with tool hints)
+                        # Get file context to pass as system_context (not injected into user message)
+                        file_context = None
                         if self._current_context:
                             file_context = self._current_context.build_context_prompt()
                             if file_context:
-                                task_message = f"{file_context}\n\n---\n\n{task_message}"
-                                logger.info(f"[task:{spec.id[:8]}] Injected file context for execution")
+                                logger.info(f"[task:{spec.id[:8]}] Will pass file context as system_context")
 
                         # Execute and collect output with task_id for tool call association
+                        # Pass file_context as system_context to avoid polluting message history
                         result_text = ""
                         async for event in self._execute_actor(
                             actor, task_message, thread_id, event_id,
                             task_id=spec.id,
                             user_id=self._current_user_id,
+                            system_context=file_context,
                         ):
                             event_id += 1
                             # Convert text_delta to task_output (associate with specific task)
@@ -951,9 +1181,37 @@ class AIMEPlanner:
         ]
 
         logger.info(f"[_decompose_task] Calling LLM for task decomposition")
+
+        # Create Langfuse span for task decomposition
+        # NOTE: Using start_generation() instead of start_as_current_observation() to avoid
+        # type checking warnings and ensure consistent span update/end pattern.
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference
+
+        if langfuse_client:
+            try:
+                span = langfuse_client.start_generation(
+                    name="task-decomposition",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"message": message[:500]},
+                )
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke(messages)
             logger.debug("[_decompose_task] LLM response received")
+
+            # Extract token usage from response
+            if span and hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                span.update(usage={
+                    "input": usage.get("input_tokens", 0),
+                    "output": usage.get("output_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                })
+
             content = response.content if hasattr(response, "content") else str(response)
             result_text = str(content) if not isinstance(content, str) else content
 
@@ -998,11 +1256,35 @@ class AIMEPlanner:
                 )
 
             logger.info(f"[_decompose_task] Created {len(specs)} subtasks")
+
+            # Update Langfuse span with output
+            if span:
+                try:
+                    span.update(output={
+                        "subtask_count": len(specs),
+                        "subtasks": [s.description[:100] for s in specs],
+                    })
+                except Exception:
+                    pass
+
             return specs
 
         except Exception as e:
             logger.warning(f"[_decompose_task] Failed: {e}")
+            # Update Langfuse span with error
+            if span:
+                try:
+                    span.update(output={"error": str(e)})
+                except Exception:
+                    pass
             return []
+
+        finally:
+            if span:
+                try:
+                    span.end()
+                except Exception:
+                    pass
 
     async def _generate_summary(
         self, original_task: str, results: dict[str, Any]
@@ -1054,14 +1336,61 @@ class AIMEPlanner:
 - 如果有数据或发现，用结构化方式呈现
 """
 
+        # Create Langfuse span for summary generation
+        # NOTE: Using start_generation() instead of start_as_current_observation() to avoid
+        # type checking warnings and ensure consistent span update/end pattern.
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference
+
+        if langfuse_client:
+            try:
+                span = langfuse_client.start_generation(
+                    name="summary-generation",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={"task": original_task[:200], "result_count": len(results)},
+                )
+            except Exception:
+                pass
+
         try:
             messages = [SystemMessage(content=summary_prompt)]
             response = await self._model.ainvoke(messages)
             summary = str(response.content)
+
+            # Extract token usage from response
+            if span and hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                span.update(usage={
+                    "input": usage.get("input_tokens", 0),
+                    "output": usage.get("output_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                })
+
+            # Update Langfuse span with output
+            if span:
+                try:
+                    span.update(output={"summary": summary[:500]})
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.warning(f"LLM summary generation failed: {e}")
+            # Update Langfuse span with error
+            if span:
+                try:
+                    span.update(output={"error": str(e)})
+                except Exception:
+                    pass
             # Fallback to simple summary
             summary = "任务执行完成。"
+
+        finally:
+            if span:
+                try:
+                    span.end()
+                except Exception:
+                    pass
 
         # Append file download links at the end
         if file_links:
@@ -1181,8 +1510,38 @@ If no alternative is possible, return:
             ),
         ]
 
+        # Create Langfuse span for alternative subtask creation
+        # NOTE: Using start_generation() instead of start_as_current_observation() to avoid
+        # type checking warnings and ensure consistent span update/end pattern.
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference
+
+        if langfuse_client:
+            try:
+                span = langfuse_client.start_generation(
+                    name="create-alternative-subtask",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={
+                        "original_task": failed_spec.description[:200],
+                        "error": error[:200],
+                    },
+                )
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke(messages)
+
+            # Extract token usage from response
+            if span and hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                span.update(usage={
+                    "input": usage.get("input_tokens", 0),
+                    "output": usage.get("output_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                })
+
             content = response.content if hasattr(response, "content") else str(response)
             result_text = str(content) if not isinstance(content, str) else content
 
@@ -1197,6 +1556,15 @@ If no alternative is possible, return:
 
             if data.get("no_alternative"):
                 logger.info(f"No alternative for {failed_spec.id}: {data.get('reason')}")
+                # Update Langfuse span
+                if span:
+                    try:
+                        span.update(output={
+                            "no_alternative": True,
+                            "reason": data.get("reason"),
+                        })
+                    except Exception:
+                        pass
                 return None
 
             # Create alternative subtask
@@ -1213,11 +1581,35 @@ If no alternative is possible, return:
             )
 
             logger.info(f"Created alternative subtask: {alt_spec.description[:100]}")
+
+            # Update Langfuse span with output
+            if span:
+                try:
+                    span.update(output={
+                        "alternative_description": alt_spec.description[:200],
+                        "capabilities": alt_spec.capabilities,
+                    })
+                except Exception:
+                    pass
+
             return alt_spec
 
         except Exception as e:
             logger.warning(f"Failed to create alternative subtask: {e}")
+            # Update Langfuse span with error
+            if span:
+                try:
+                    span.update(output={"error": str(e)})
+                except Exception:
+                    pass
             return None
+
+        finally:
+            if span:
+                try:
+                    span.end()
+                except Exception:
+                    pass
 
     def _extract_fail_reason(self, result_text: str) -> str:
         """Extract failure reason from task output.
@@ -1372,8 +1764,41 @@ If no alternative is possible, return:
             f"fail_reason='{fail_reason[:50]}...'"
         )
 
+        # Create Langfuse span for replanning
+        # NOTE: Using start_generation() instead of start_as_current_observation() to avoid
+        # type checking warnings and ensure consistent span update/end pattern.
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+        span = None  # Direct span object reference
+
+        if langfuse_client:
+            try:
+                span = langfuse_client.start_generation(
+                    name="replan-from-failure",
+                    model=getattr(self._model, "model", None) or getattr(self._model, "model_name", "unknown"),
+                    input={
+                        "original_message": original_message[:200],
+                        "failed_task": failed_spec.description[:200],
+                        "fail_reason": fail_reason[:200],
+                        "completed_count": len(completed_results),
+                        "remaining_count": len(remaining_specs),
+                    },
+                )
+            except Exception:
+                pass
+
         try:
             response = await self._model.ainvoke(messages)
+
+            # Extract token usage from response
+            if span and hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                span.update(usage={
+                    "input": usage.get("input_tokens", 0),
+                    "output": usage.get("output_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                })
+
             content = response.content if hasattr(response, "content") else str(response)
             result_text = str(content) if not isinstance(content, str) else content
 
@@ -1418,8 +1843,32 @@ If no alternative is possible, return:
                 )
 
             logger.info(f"[_replan_from_failure] Generated {len(new_specs)} new tasks")
+
+            # Update Langfuse span with output
+            if span:
+                try:
+                    span.update(output={
+                        "new_task_count": len(new_specs),
+                        "new_tasks": [s.description[:100] for s in new_specs],
+                    })
+                except Exception:
+                    pass
+
             return new_specs
 
         except Exception as e:
             logger.error(f"[_replan_from_failure] Failed: {e}")
+            # Update Langfuse span with error
+            if span:
+                try:
+                    span.update(output={"error": str(e)})
+                except Exception:
+                    pass
             return []
+
+        finally:
+            if span:
+                try:
+                    span.end()
+                except Exception:
+                    pass

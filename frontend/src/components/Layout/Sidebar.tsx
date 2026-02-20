@@ -2,8 +2,8 @@
  * Main sidebar component with navigation
  */
 
-import { useState, useEffect, ReactNode } from 'react';
-import { Plus, MessagesSquare, Settings, LogOut, User, FolderKanban } from 'lucide-react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
+import { MessagesSquare, MessageSquarePlus, Settings, LogOut, User, FolderKanban, FolderPlus } from 'lucide-react';
 import { SidebarHeader } from './SidebarHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { ConversationPopover } from '../Conversations/ConversationPopover';
@@ -24,6 +24,7 @@ interface SidebarProps {
   onDeleteConversation?: (id: string) => Promise<void>;
   // Projects section
   projectsSection?: ReactNode | ((collapsed: boolean) => ReactNode);
+  onCreateProject?: () => void;
 }
 
 export function Sidebar({
@@ -38,6 +39,7 @@ export function Sidebar({
   onUpdateConversation,
   onDeleteConversation,
   projectsSection,
+  onCreateProject,
 }: SidebarProps) {
   const { user, isAdmin, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(() => {
@@ -45,6 +47,8 @@ export function Sidebar({
     return saved === 'true';
   });
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', String(collapsed));
@@ -56,6 +60,31 @@ export function Sidebar({
       setPopoverOpen(false);
     }
   }, [collapsed]);
+
+  // Close user menu when clicking outside or pressing Escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setUserMenuOpen(false);
+      }
+    };
+
+    if (userMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [userMenuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -82,12 +111,6 @@ export function Sidebar({
       <SidebarHeader collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
 
       <div className="sidebar-content">
-        {/* New Conversation Button */}
-        <button className="sidebar-btn primary" onClick={onNewConversation}>
-          <Plus size={20} />
-          {!collapsed && <span>新建对话</span>}
-        </button>
-
         {/* Projects Section */}
         {projectsSection && (
           <div className="sidebar-section">
@@ -103,6 +126,15 @@ export function Sidebar({
                 <div className="sidebar-section-header">
                   <FolderKanban size={18} />
                   <span>项目</span>
+                  {onCreateProject && (
+                    <button
+                      className="section-action-btn"
+                      onClick={onCreateProject}
+                      title="新建项目"
+                    >
+                      <FolderPlus size={16} />
+                    </button>
+                  )}
                 </div>
                 <div className="sidebar-section-content">
                   {typeof projectsSection === 'function' ? projectsSection(collapsed) : projectsSection}
@@ -112,14 +144,14 @@ export function Sidebar({
           </div>
         )}
 
-        {/* History Section */}
+        {/* Conversations Section */}
         <div className="sidebar-section">
           {collapsed ? (
             /* Collapsed: Section header becomes clickable popover trigger */
             <button
               className="sidebar-btn conversation-popover-trigger"
               onClick={() => setPopoverOpen(true)}
-              title="历史对话"
+              title="对话"
             >
               <MessagesSquare size={20} />
             </button>
@@ -128,7 +160,14 @@ export function Sidebar({
             <>
               <div className="sidebar-section-header">
                 <MessagesSquare size={18} />
-                <span>历史对话</span>
+                <span>对话</span>
+                <button
+                  className="section-action-btn"
+                  onClick={onNewConversation}
+                  title="新建对话"
+                >
+                  <MessageSquarePlus size={16} />
+                </button>
               </div>
               <div className="sidebar-section-content">
                 {typeof children === 'function' ? children(collapsed) : children}
@@ -153,31 +192,46 @@ export function Sidebar({
         />
       )}
 
-      {/* Bottom Navigation */}
+      {/* Bottom Navigation - Icon Row */}
       <div className="sidebar-footer">
-        {/* Admin Section - Only visible to admins */}
-        {isAdmin && (
-          <button className="sidebar-btn" onClick={onAdminClick}>
+        {isAdmin && !collapsed && (
+          <button
+            className="sidebar-footer-icon"
+            onClick={onAdminClick}
+            title="系统管理"
+          >
             <Settings size={20} />
-            {!collapsed && <span>系统管理</span>}
           </button>
         )}
 
-        {/* User Info & Logout */}
-        <div className="sidebar-user">
-          <div className="user-info">
+        {/* User Menu */}
+        <div className="user-menu-container" ref={userMenuRef}>
+          <button
+            className="sidebar-footer-icon"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            title="用户菜单"
+          >
             <User size={20} />
-            {!collapsed && (
-              <div className="user-details">
-                <span className="user-name">{user?.username}</span>
-                <span className="user-role">{user?.role === 'admin' ? '管理员' : '用户'}</span>
-              </div>
-            )}
-          </div>
-          <button className="sidebar-btn logout" onClick={handleLogout} title="退出登录">
-            <LogOut size={20} />
-            {!collapsed && <span>退出登录</span>}
           </button>
+
+          {userMenuOpen && (
+            <div className="user-menu-popover">
+              <div className="user-menu-info">
+                <div className="user-menu-item">
+                  <span className="user-menu-label">用户类型</span>
+                  <span className="user-menu-value">{user?.role === 'admin' ? '管理员' : '用户'}</span>
+                </div>
+                <div className="user-menu-item">
+                  <span className="user-menu-label">用户名</span>
+                  <span className="user-menu-value">{user?.username}</span>
+                </div>
+              </div>
+              <button className="user-menu-logout" onClick={handleLogout}>
+                <LogOut size={16} />
+                <span>退出登录</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </aside>
