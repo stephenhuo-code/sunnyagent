@@ -26,19 +26,17 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 # Load environment variables early
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from backend.supervisor import build_supervisor
 from backend.tools.container_pool import get_pool, shutdown_pool, cleanup_all_sunnyagent_containers
 from backend.auth.database import init_default_admin
 from backend.db import init_pool, close_pool, init_tables
 from backend.llm import validate_config, get_current_provider
 from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVAL
 from backend.api import register_routers
-from backend.core.chat import set_agent
 from backend.services.langfuse_service import get_langfuse_service, reset_langfuse_service
-from backend.checkpointer_store import set_checkpointer, clear_checkpointer
+from backend.checkpointer_store import set_checkpointer, clear_checkpointer, build_history_graph, set_history_graph
 
 # Global state
-_agent = None
+_history_graph = None
 _checkpointer = None
 _context_manager = None
 _cleanup_task = None
@@ -83,8 +81,8 @@ async def _context_cleanup_task(context_manager: ContextManager):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage agent and checkpointer lifecycle."""
-    global _agent, _checkpointer, _context_manager, _cleanup_task, _langfuse_service
+    """Manage history graph and checkpointer lifecycle."""
+    global _history_graph, _checkpointer, _context_manager, _cleanup_task, _langfuse_service
 
     # Validate LLM configuration early (fail fast)
     try:
@@ -156,14 +154,14 @@ async def lifespan(app: FastAPI):
                 # Set shared checkpointer for all agents
                 set_checkpointer(_checkpointer)
 
-                _agent = build_supervisor(checkpointer=_checkpointer)
-                # Set agent reference for chat router
-                set_agent(_agent)
+                # Build history graph for message persistence
+                _history_graph = build_history_graph(checkpointer=_checkpointer)
+                set_history_graph(_history_graph)
                 yield
-                _agent = None
+                _history_graph = None
                 _checkpointer = None
 
-                # Clear shared checkpointer
+                # Clear shared checkpointer and history graph
                 clear_checkpointer()
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL checkpointer: {e}")
@@ -178,14 +176,14 @@ async def lifespan(app: FastAPI):
             # Set shared checkpointer for all agents
             set_checkpointer(_checkpointer)
 
-            _agent = build_supervisor(checkpointer=_checkpointer)
-            # Set agent reference for chat router
-            set_agent(_agent)
+            # Build history graph for message persistence
+            _history_graph = build_history_graph(checkpointer=_checkpointer)
+            set_history_graph(_history_graph)
             yield
-            _agent = None
+            _history_graph = None
             _checkpointer = None
 
-            # Clear shared checkpointer
+            # Clear shared checkpointer and history graph
             clear_checkpointer()
 
     # Cleanup

@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-SunnyAgent — 一个全栈 Web 应用（FastAPI + React），使用 LangGraph Supervisor 将用户消息路由到专业 Agent，支持网络研究、SQL 查询、多步骤编排、文件处理和沙箱代码执行。包含用户认证、对话管理和管理员用户管理功能。
+SunnyAgent — 一个全栈 Web 应用（FastAPI + React），使用 AIME（Autonomous Intent-driven Multi-agent Executor）架构将用户消息路由到专业 Agent，支持网络研究、SQL 查询、多步骤编排、文件处理和沙箱代码执行。包含用户认证、对话管理和管理员用户管理功能。
 
 ## 技术栈
 
@@ -39,11 +39,13 @@ User → IntentAnalyzer (Rule → LLM 分类器链)
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
+| AIME Entry | `backend/aime/__init__.py` | 公开 API：`stream_aime_response()`, `get_aime_planner()` |
 | IntentAnalyzer | `backend/aime/intent/analyzer.py` | 分类器链协调，提取简化上下文避免意图污染 |
 | AIMEPlanner | `backend/aime/planner.py` | 任务分解、执行循环、重规划 |
 | ActorFactory | `backend/aime/actor_factory.py` | 根据能力匹配选择 Agent |
 | ProgressManager | `backend/aime/progress_manager.py` | 任务状态追踪、DAG 依赖管理 |
 | ContextManager | `backend/aime/context_manager.py` | 任务间上下文传递、LRU 缓存 + PostgreSQL 持久化 |
+| Checkpointer Store | `backend/checkpointer_store.py` | 共享 checkpointer + history_graph，消息持久化 |
 | Agent Registry | `backend/registry.py` | 中央 `AGENT_REGISTRY` 字典，Agent 通过 `register_agent()` 自注册 |
 | Deep Agents | `backend/agents/` | 每个专家使用 `create_deep_agent()` 创建，有独立的中间件栈 |
 | Package Agents | `backend/agents/loader.py` | 扫描 `packages/` 目录加载 Agent 包 |
@@ -216,7 +218,7 @@ App
         └── InputBar
 ```
 
-InputBar 支持 `/command` 语法直接路由到指定 Agent（绕过 Supervisor）。
+InputBar 支持 `/command` 语法直接路由到指定 Agent（绕过 AIME 意图分析）。
 
 ---
 
@@ -230,7 +232,7 @@ InputBar 支持 `/command` 语法直接路由到指定 Agent（绕过 Supervisor
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Agent Layer (agents/)                    │
-│   supervisor.py → [research, sql] + AIME generic actor      │
+│   AIME Planner → [research, sql] + generic actor            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -298,7 +300,7 @@ API → Agent → Service → Repository → Database
 | `/api/threads/{id}/history` | GET | User | 获取线程消息历史 |
 | `/api/agents` | GET | - | 列出已注册 Agent |
 
-**ChatRequest 字段**: `thread_id`, `message`, `agent`（跳过 supervisor）, `skill`（注入技能指令）, `file_ids`（上传文件）
+**ChatRequest 字段**: `thread_id`, `message`, `agent`（直接路由到指定 Agent）, `skill`（注入技能指令）, `file_ids`（上传文件）
 
 ### 文件
 
@@ -351,7 +353,7 @@ API → Agent → Service → Repository → Database
 |------|------|----------|
 | Agent 直接导入 `asyncpg` 或 `db.py` | 绕过 Service 层 | Agent → Service → Repository → db |
 | 在 Agent 中硬编码 SQL | 违反关注点分离 | 使用 Repository 或 Service 方法 |
-| 跳过 `registry.py` 注册 Agent | 无法被 Supervisor 发现 | 使用 `register_agent()` |
+| 跳过 `registry.py` 注册 Agent | 无法被 AIME 发现 | 使用 `register_agent()` |
 | 在多处重复定义相同工具函数 | 代码重复 | 放入 `shared/utils.py` |
 | 直接在 Agent 中操作文件系统 | 安全风险 | 使用 `file_service` |
 
@@ -396,10 +398,11 @@ sunnyagent/
 ├── backend/
 │   ├── main.py              # FastAPI 应用入口
 │   ├── db.py                # PostgreSQL 连接池
-│   ├── supervisor.py        # LangGraph supervisor 路由
+│   ├── checkpointer_store.py # 共享 checkpointer + history_graph
 │   ├── registry.py          # Agent 注册表
 │   ├── stream_handler.py    # LangGraph → SSE 转换
 │   ├── aime/                # AIME 核心（意图分析+任务规划）
+│   │   ├── __init__.py      # 公开 API: stream_aime_response(), get_aime_planner()
 │   │   ├── context.py       # AgentContext, FileContext, SessionMetadata
 │   │   ├── context_manager.py # 任务间上下文存储和检索
 │   │   ├── planner.py       # AIMEPlanner 任务规划和执行

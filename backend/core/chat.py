@@ -12,31 +12,18 @@ from backend.auth.models import UserInfo
 from backend.models import ChatRequest, ThreadCreate
 from backend.registry import AGENT_REGISTRY
 from backend.skills import SKILL_REGISTRY
-from backend.supervisor import stream_aime_response
+from backend.aime import stream_aime_response
 from backend.conversations.database import (
     touch_conversation,
     get_conversation_by_thread,
     create_conversation,
 )
 from backend.aime.context import AgentContext, SessionMetadata, FileContext, FileInfo, get_file_type
+from backend.checkpointer_store import get_history_graph
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
-
-# Reference to the agent (set by main.py during startup)
-_agent = None
-
-
-def set_agent(agent):
-    """Set the agent reference for history retrieval."""
-    global _agent
-    _agent = agent
-
-
-def get_agent():
-    """Get the current agent reference for state persistence."""
-    return _agent
 
 
 def get_uploaded_file_info(file_id: str) -> FileInfo | None:
@@ -210,12 +197,14 @@ async def get_thread_history(
     if not conversation:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    if _agent is None:
+    history_graph = get_history_graph()
+    if history_graph is None:
         return {"messages": []}
 
-    config = {"configurable": {"thread_id": thread_id}}
+    from langchain_core.runnables.config import RunnableConfig
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
     try:
-        state = await _agent.aget_state(config)
+        state = await history_graph.aget_state(config)
         if state and state.values:
             messages = []
             for msg in state.values.get("messages", []):

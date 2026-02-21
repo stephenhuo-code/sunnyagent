@@ -50,7 +50,9 @@ export function SystemSettings() {
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [startDate, setStartDate] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
 
   const loadStatus = useCallback(async () => {
     setIsLoading(true);

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SunnyAgent — a full-stack web app (FastAPI + React) with a LangGraph supervisor that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution. Includes user authentication, conversation management, and admin user management.
+SunnyAgent — a full-stack web app (FastAPI + React) with an AIME (Autonomous Intent-driven Multi-agent Executor) architecture that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution. Includes user authentication, conversation management, and admin user management.
 
 ## Development Commands
 
@@ -76,7 +76,7 @@ cd frontend && npx tsc      # TypeScript checking
 ## Architecture
 
 > **完整系统架构见 `docs/architecture.md`**，包含：
-> - Supervisor + Deep Agents 模式
+> - AIME + Deep Agents 模式
 > - Streaming Pipeline
 > - 数据库设计
 > - 认证授权
@@ -97,13 +97,12 @@ User → IntentAnalyzer → AIMEPlanner
 ```
 
 **核心组件：**
+- `backend/aime/__init__.py` — AIME 入口 (`stream_aime_response()`, `get_aime_planner()`)
 - `backend/aime/intent/` — 意图分析 (Rule → Keyword → LLM 分类器链)
 - `backend/aime/planner.py` — 任务规划与执行
 - `backend/aime/actor_factory.py` — 动态 Agent 选择
 - `backend/aime/progress_manager.py` — 进度追踪与 SSE 事件
-
-**核心组件：**
-- `backend/supervisor.py` — 路由到专业 Agent
+- `backend/checkpointer_store.py` — 共享 checkpointer + history_graph
 - `backend/registry.py` — Agent 自注册中心
 - `backend/stream_handler.py` — LangGraph → SSE 转换
 - `backend/db.py` — PostgreSQL 连接池
@@ -158,7 +157,7 @@ User → IntentAnalyzer → AIMEPlanner
 | `/api/threads/{id}/history` | GET | User | Get thread message history |
 | `/api/agents` | GET | - | List registered agents |
 
-**ChatRequest fields**: `thread_id`, `message`, `agent` (skip supervisor), `skill` (inject skill instructions), `file_ids` (uploaded files)
+**ChatRequest fields**: `thread_id`, `message`, `agent` (direct route to agent), `skill` (inject skill instructions), `file_ids` (uploaded files)
 
 ### Skills
 
@@ -202,9 +201,13 @@ sunnyagent/
 ├── backend/
 │   ├── main.py              # FastAPI application entry
 │   ├── db.py                # PostgreSQL connection pool
-│   ├── supervisor.py        # LangGraph supervisor router
+│   ├── checkpointer_store.py # Shared checkpointer + history_graph
 │   ├── registry.py          # Agent registry
 │   ├── stream_handler.py    # LangGraph → SSE translation
+│   ├── aime/                # AIME core module
+│   │   ├── __init__.py      # Public API: stream_aime_response(), get_aime_planner()
+│   │   ├── planner.py       # Task planning and execution
+│   │   └── ...              # Intent analysis, actor factory, etc.
 │   ├── auth/                # Authentication module
 │   │   ├── models.py        # User, Login, etc. Pydantic models
 │   │   ├── security.py      # Password hashing, JWT
@@ -218,7 +221,6 @@ sunnyagent/
 │   ├── agents/              # Deep agents
 │   │   ├── research.py      # Web research agent
 │   │   ├── sql.py           # SQL database agent
-│   │   ├── general.py       # General orchestrator
 │   │   └── loader.py        # Package agent loader
 │   ├── tools/               # Agent tools
 │   │   ├── container_pool.py # Docker container pool
@@ -275,7 +277,7 @@ sunnyagent/
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Agent Layer (agents/)                    │
-│   supervisor.py → [research, analysis, quality, general]    │
+│   AIME Planner → [research, sql] + generic actor            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -302,7 +304,7 @@ sunnyagent/
 |---------|--------|------------------|
 | Agent 直接导入 `asyncpg` 或 `db.py` | 绕过 Service 层 | Agent → Service → Repository → db |
 | 在 Agent 中硬编码 SQL | 违反关注点分离 | 使用 Repository 或 Service 方法 |
-| 跳过 `registry.py` 注册 Agent | 无法被 Supervisor 发现 | 使用 `register_agent()` |
+| 跳过 `registry.py` 注册 Agent | 无法被 AIME 发现 | 使用 `register_agent()` |
 | 在多处重复定义相同工具函数 | 代码重复 | 放入 `shared/utils.py` |
 | 直接在 Agent 中操作文件系统 | 安全风险 | 使用 `file_service` |
 

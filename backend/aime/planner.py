@@ -392,11 +392,12 @@ class AIMEPlanner:
         # This ensures "hello" type messages are saved even though they bypass LangGraph
         if output_text:
             try:
-                from backend.core.chat import get_agent
-                agent = get_agent()
-                if agent:
-                    config = {"configurable": {"thread_id": thread_id}}
-                    await agent.aupdate_state(
+                from backend.checkpointer_store import get_history_graph
+                from langchain_core.runnables.config import RunnableConfig
+                history_graph = get_history_graph()
+                if history_graph:
+                    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+                    await history_graph.aupdate_state(
                         config,
                         {"messages": [HumanMessage(content=message), AIMessage(content=output_text)]}
                     )
