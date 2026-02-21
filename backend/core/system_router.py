@@ -1,6 +1,7 @@
 """System settings router - system configuration and monitoring endpoints."""
 
-from typing import Literal
+from datetime import date
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -34,8 +35,9 @@ async def get_langfuse_settings(_admin=Depends(require_admin)) -> dict:
 
 @router.get("/usage")
 async def get_usage_stats(
-    granularity: Literal["day", "week", "month"] = Query(default="day"),
+    granularity: Literal["day"] = Query(default="day"),
     days: int = Query(default=30, ge=1, le=365),
+    start_date: Optional[date] = Query(default=None),
     _user=Depends(get_current_user),
 ) -> dict:
     """Get system-wide token usage statistics.
@@ -43,8 +45,9 @@ async def get_usage_stats(
     All authenticated users can access this endpoint.
 
     Args:
-        granularity: Time aggregation granularity (day/week/month)
+        granularity: Time aggregation granularity (fixed to day)
         days: Number of days to query (1-365)
+        start_date: Optional start date for the query (YYYY-MM-DD)
 
     Returns:
         {
@@ -63,4 +66,6 @@ async def get_usage_stats(
     from backend.services.langfuse_service import get_langfuse_service
 
     service = get_langfuse_service()
-    return await service.get_usage_stats(granularity=granularity, days=days)
+    return await service.get_usage_stats(
+        granularity=granularity, days=days, start_date=start_date
+    )

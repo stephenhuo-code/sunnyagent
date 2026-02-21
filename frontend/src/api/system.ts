@@ -58,12 +58,16 @@ export async function getLangfuseStatus(): Promise<LangfuseStatus> {
 
 export async function getUsageStats(
   granularity: Granularity = "day",
-  days: number = 30
+  days: number = 30,
+  startDate?: string
 ): Promise<UsageStats> {
   const params = new URLSearchParams({
     granularity,
     days: days.toString(),
   });
+  if (startDate) {
+    params.append("start_date", startDate);
+  }
 
   const response = await fetch(`/api/system/usage?${params}`, {
     credentials: "include",

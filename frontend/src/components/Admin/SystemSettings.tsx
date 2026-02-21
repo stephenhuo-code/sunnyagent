@@ -18,21 +18,13 @@ import {
   getUsageStats,
   type LangfuseStatus,
   type UsageStats,
-  type Granularity,
 } from "../../api/system";
 import "./Admin.css";
 
 const TIME_RANGE_OPTIONS = [
+  { value: 1, label: "1 天" },
   { value: 7, label: "7 天" },
-  { value: 14, label: "14 天" },
   { value: 30, label: "30 天" },
-  { value: 90, label: "90 天" },
-];
-
-const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
-  { value: "day", label: "按天" },
-  { value: "week", label: "按周" },
-  { value: "month", label: "按月" },
 ];
 
 function formatNumber(num: number): string {
@@ -57,8 +49,8 @@ export function SystemSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [granularity, setGranularity] = useState<Granularity>("day");
   const [days, setDays] = useState(30);
+  const [startDate, setStartDate] = useState<string>("");
 
   const loadStatus = useCallback(async () => {
     setIsLoading(true);
@@ -76,14 +68,14 @@ export function SystemSettings() {
   const loadUsageStats = useCallback(async () => {
     setIsLoadingUsage(true);
     try {
-      const stats = await getUsageStats(granularity, days);
+      const stats = await getUsageStats("day", days, startDate || undefined);
       setUsageStats(stats);
     } catch (err) {
       console.error("Failed to load usage stats:", err);
     } finally {
       setIsLoadingUsage(false);
     }
-  }, [granularity, days]);
+  }, [days, startDate]);
 
   useEffect(() => {
     loadStatus();
@@ -219,22 +211,6 @@ export function SystemSettings() {
           {/* Filters */}
           <div className="usage-filters">
             <div className="filter-group">
-              <span className="filter-label">时间粒度:</span>
-              <div className="btn-group">
-                {GRANULARITY_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={`btn-group-item ${
-                      granularity === opt.value ? "active" : ""
-                    }`}
-                    onClick={() => setGranularity(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="filter-group">
               <span className="filter-label">时间范围:</span>
               <select
                 className="filter-select"
@@ -247,6 +223,15 @@ export function SystemSettings() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="filter-group">
+              <span className="filter-label">起始日期:</span>
+              <input
+                type="date"
+                className="filter-input"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
             </div>
           </div>
 
@@ -297,30 +282,38 @@ export function SystemSettings() {
               {usageStats.by_time.length > 0 && (
                 <div className="usage-chart-section">
                   <h3>趋势图（按时间）</h3>
-                  <div className="usage-chart">
-                    {usageStats.by_time
-                      .slice()
-                      .reverse()
-                      .map((item) => (
-                        <div key={item.date} className="chart-bar-container">
-                          <div
-                            className="chart-bar"
-                            style={{
-                              height: `${
-                                maxTokens > 0
-                                  ? (item.tokens / maxTokens) * 100
-                                  : 0
-                              }%`,
-                            }}
-                            title={`${item.date}: ${formatNumber(
-                              item.tokens
-                            )} tokens, ${item.calls} 次调用`}
-                          />
-                          <div className="chart-bar-label">
-                            {item.date.split("-").slice(-1)[0]}
+                  <div className="usage-chart-wrapper">
+                    <div className="chart-y-unit">Token</div>
+                    <div className="chart-y-axis">
+                      <span className="y-axis-label">{formatNumber(maxTokens)}</span>
+                      <span className="y-axis-label">{formatNumber(maxTokens / 2)}</span>
+                      <span className="y-axis-label">0</span>
+                    </div>
+                    <div className="usage-chart">
+                      {usageStats.by_time
+                        .slice()
+                        .reverse()
+                        .map((item) => (
+                          <div key={item.date} className="chart-bar-container">
+                            <div
+                              className="chart-bar"
+                              style={{
+                                height: `${
+                                  maxTokens > 0
+                                    ? (item.tokens / maxTokens) * 100
+                                    : 0
+                                }%`,
+                              }}
+                              title={`${item.date}: ${formatNumber(
+                                item.tokens
+                              )} tokens, ${item.calls} 次调用`}
+                            />
+                            <div className="chart-bar-label">
+                              {item.date.slice(5)}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                    </div>
                   </div>
                 </div>
               )}

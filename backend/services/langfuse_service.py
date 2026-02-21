@@ -12,7 +12,7 @@ import os
 import logging
 from typing import Any, Literal, Optional
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -196,15 +196,17 @@ class LangfuseService:
 
     async def get_usage_stats(
         self,
-        granularity: Literal["day", "week", "month"] = "day",
+        granularity: Literal["day"] = "day",
         days: int = 30,
+        start_date: Optional[date] = None,
     ) -> dict[str, Any]:
         """
         从 Langfuse 查询 token 用量统计
 
         Args:
-            granularity: 时间聚合粒度 (day/week/month)
+            granularity: 时间聚合粒度 (固定为 day)
             days: 查询时间范围（天数）
+            start_date: 可选的起始日期，如果提供则从该日期开始
 
         Returns:
             {
@@ -236,7 +238,11 @@ class LangfuseService:
             }
 
         try:
-            start_time = datetime.now(timezone.utc) - timedelta(days=days)
+            # If start_date is provided, use it; otherwise calculate from days
+            if start_date:
+                start_time = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+            else:
+                start_time = datetime.now(timezone.utc) - timedelta(days=days)
 
             # Fetch both GENERATION and TOOL observations
             # TOOL type is created by LiteLLM OTEL callback (named "raw_gen_ai_request")
@@ -346,7 +352,7 @@ class LangfuseService:
 
                 # Time aggregation
                 if hasattr(obs, "start_time") and obs.start_time:
-                    time_key = self._get_time_key(obs.start_time, granularity)
+                    time_key = self._get_time_key(obs.start_time)
                     time_stats[time_key]["tokens"] += tokens
                     time_stats[time_key]["cost"] += cost
                     time_stats[time_key]["calls"] += 1
@@ -422,14 +428,9 @@ class LangfuseService:
                 "error": str(e),
             }
 
-    def _get_time_key(self, dt: datetime, granularity: Literal["day", "week", "month"]) -> str:
-        """Get time key based on granularity for aggregation."""
-        if granularity == "day":
-            return dt.strftime("%Y-%m-%d")
-        elif granularity == "week":
-            return dt.strftime("%Y-W%W")
-        else:  # month
-            return dt.strftime("%Y-%m")
+    def _get_time_key(self, dt: datetime) -> str:
+        """Get time key for daily aggregation."""
+        return dt.strftime("%Y-%m-%d")
 
 
 # 全局单例

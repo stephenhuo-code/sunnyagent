@@ -15,6 +15,7 @@ SunnyAgent — 一个全栈 Web 应用（FastAPI + React），使用 LangGraph S
 | 数据库 | PostgreSQL 15 |
 | 容器 | Docker (沙箱执行) |
 | 认证 | JWT + HTTP-only Cookies |
+| 可观测性 | Langfuse v3 (ClickHouse + Redis + MinIO + PostgreSQL) |
 
 ---
 
@@ -114,6 +115,7 @@ PostgreSQL 作为主数据库，通过 asyncpg 连接池管理：
 | `files` | 上传文件元数据，关联用户和对话 |
 | `langgraph_checkpoints` | LangGraph 状态持久化（自动管理） |
 | `task_contexts` | 任务间上下文存储（ContextManager 持久化） |
+| `langfuse_user_mapping` | SunnyAgent 用户与 Langfuse 用户映射（账号同步） |
 
 - **连接池**: `backend/db.py` - 全局 asyncpg 池，2-10 连接
 - **Thread ID**: 8 字符十六进制字符串（`uuid4().hex[:8]`）
@@ -143,6 +145,28 @@ Skills 提供可注入 Agent Prompt 的领域特定指令：
 | Loader | `backend/skills/loader.py` | 从 `skills/anthropic/skills/` 和 `skills/custom/` 自动加载 |
 
 **格式**: 每个 Skill 是一个目录，包含 `SKILL.md`（YAML frontmatter + markdown 指令）
+
+### Langfuse 可观测性
+
+Langfuse 提供 Agent 执行链路追踪和 Token 用量统计：
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| LangfuseService | `backend/services/langfuse_service.py` | 客户端初始化、健康检查、CallbackHandler |
+| System Router | `backend/core/system_router.py` | `/api/system/langfuse` 和 `/api/system/usage` 端点 |
+| SystemSettings | `frontend/src/components/Admin/SystemSettings.tsx` | 管理界面集成 |
+
+**核心功能**：
+- **Trace 追踪**：通过 LiteLLM OTEL Callback 自动记录所有 LLM 调用
+- **Token 用量统计**：按时间/模型/用户聚合，支持趋势图展示
+- **系统管理集成**：健康状态显示、一键跳转到 Langfuse 控制台
+- **优雅降级**：Langfuse 不可用时不影响 Agent 正常运行
+
+**环境变量**：
+- `LANGFUSE_TRACING_ENABLED` — 启用/禁用追踪（默认：true）
+- `LANGFUSE_BASE_URL` — Langfuse 服务地址（默认：http://localhost:3001）
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` — API 密钥
+- `LANGFUSE_SAMPLE_RATE` — 采样率 0.0-1.0（默认：1.0）
 
 ### 认证与授权
 
@@ -285,6 +309,13 @@ API → Agent → Service → Repository → Database
 | `/api/files/{id}/download` | GET | User | 下载上传的文件 |
 | `/api/files/{id}/content` | GET | User | 预览文本文件内容 |
 
+### 系统管理
+
+| 端点 | 方法 | 认证 | 说明 |
+|------|------|------|------|
+| `/api/system/langfuse` | GET | Admin | 获取 Langfuse 状态和配置 |
+| `/api/system/usage` | GET | User | 获取 Token 用量统计 |
+
 ### 项目管理
 
 | 端点 | 方法 | 认证 | 说明 |
@@ -403,6 +434,9 @@ sunnyagent/
 │   │   ├── general.py       # 通用编排器
 │   │   └── loader.py        # Package agent 加载器
 │   ├── services/            # 业务逻辑层
+│   │   └── langfuse_service.py  # Langfuse 客户端和用量统计
+│   ├── core/                # 核心路由
+│   │   └── system_router.py # 系统管理端点
 │   ├── repositories/        # 数据访问层
 │   ├── contracts/           # 接口定义
 │   ├── shared/              # 共享工具
@@ -442,7 +476,8 @@ sunnyagent/
 │           ├── 001_create_users_table.py
 │           ├── 002_create_conversations_table.py
 │           ├── 003_create_task_contexts_table.py
-│           └── 004_create_projects_table.py
+│           ├── 004_create_projects_table.py
+│           └── 005_create_langfuse_user_mapping.py
 ├── docker-compose.yml       # PostgreSQL 服务
 ├── packages/                # Package agents (AGENTS.md)
 └── skills/                  # 全局 skills (SKILL.md)
