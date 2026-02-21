@@ -3,7 +3,7 @@
 .conversation-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 
 /* Loading State */
@@ -56,27 +56,26 @@
 .conversation-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s;
-  min-height: 44px;
+  transition: background 0.15s, color 0.15s;
+  color: var(--text-secondary, #64748b);
 }
 
 .conversation-item:hover {
-  background: var(--bg-hover);
+  background: var(--hover-bg, #f1f5f9);
+  color: var(--text-primary, #1e293b);
 }
 
 .conversation-item.selected {
-  background: var(--user-bg);
-  border-left: 3px solid var(--accent);
-  padding-left: 9px;  /* 12px - 3px border */
+  background: var(--selected-bg, rgba(59, 130, 246, 0.15));
+  color: var(--text-primary, #1e293b);
 }
 
 .conversation-item.selected .conversation-title {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--text-primary, #1e293b);
 }
 
 .conversation-item.collapsed {
@@ -97,76 +96,196 @@
 }
 
 .conversation-icon {
-  color: var(--text-muted);
+  color: var(--text-tertiary, #94a3b8);
   flex-shrink: 0;
 }
 
+.conversation-item:hover .conversation-icon,
 .conversation-item.selected .conversation-icon {
-  color: var(--accent);
-}
-
-/* Conversation Info */
-.conversation-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  color: var(--text-secondary, #64748b);
 }
 
 .conversation-title {
+  flex: 1;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conversation-time {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-/* Action Buttons Container */
-.conversation-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
+/* Conversation Menu Dropdown */
+.conversation-menu-wrapper {
+  position: relative;
   flex-shrink: 0;
-  transition: opacity 0.15s ease;
 }
 
-.conversation-item:hover .conversation-actions {
-  opacity: 1;
-}
-
-/* Common Action Button Style */
-.action-btn {
-  width: 28px;
-  height: 28px;
-  padding: 0;
+.conversation-menu-btn {
+  background: none;
   border: none;
-  background: transparent;
-  color: var(--text-dim);
+  color: var(--text-tertiary, #94a3b8);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-/* Edit Button */
-.action-btn.edit-btn:hover {
-  background: var(--user-bg);
-  color: var(--accent);
+.conversation-item:hover .conversation-menu-btn {
+  opacity: 1;
 }
 
-/* Delete Button */
-.action-btn.delete-btn:hover {
-  background: #FEF2F2;
-  color: var(--error);
+.conversation-menu-btn:hover {
+  background: var(--hover-bg, #f1f5f9);
+  color: var(--text-primary, #1e293b);
+}
+
+.conversation-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 140px;
+  overflow: visible;
+  padding: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-menu {
+    background: #1e293b;
+    border-color: #334155;
+  }
+}
+
+.conversation-menu > button,
+.conversation-menu-item-with-submenu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-menu > button,
+  .conversation-menu-item-with-submenu > button {
+    color: #e5e7eb;
+  }
+}
+
+.conversation-menu > button:hover,
+.conversation-menu-item-with-submenu > button:hover {
+  background: #f3f4f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-menu > button:hover,
+  .conversation-menu-item-with-submenu > button:hover {
+    background: #334155;
+  }
+}
+
+.conversation-menu > button.danger {
+  color: #dc2626;
+}
+
+.conversation-menu > button.danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-menu > button.danger {
+    color: #f87171;
+  }
+
+  .conversation-menu > button.danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+  }
+}
+
+/* Submenu for Add to Project */
+.conversation-menu-item-with-submenu {
+  position: relative;
+}
+
+.conversation-project-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 101;
+  min-width: 160px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-project-submenu {
+    background: #1e293b;
+    border-color: #334155;
+  }
+}
+
+.conversation-project-submenu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  color: #374151;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-project-submenu-item {
+    color: #e5e7eb;
+  }
+}
+
+.conversation-project-submenu-item:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .conversation-project-submenu-item:hover:not(:disabled) {
+    background: #334155;
+  }
+}
+
+.conversation-project-submenu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.conversation-project-submenu-item .spin {
+  animation: spin 1s linear infinite;
 }
 
 /* Delete Confirmation */
@@ -258,61 +377,3 @@
   color: var(--text);
 }
 
-/* Project Menu for Conversations */
-.project-menu-container {
-  position: relative;
-}
-
-.action-btn.project-btn:hover {
-  background: var(--user-bg);
-  color: var(--accent);
-}
-
-.conversation-project-menu {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  margin-top: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  min-width: 160px;
-  overflow: hidden;
-}
-
-.conversation-project-menu-header {
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-}
-
-.conversation-project-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 8px 12px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.conversation-project-menu-item:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.conversation-project-menu-item:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.conversation-project-menu-item .spin {
-  animation: spin 1s linear infinite;
-}

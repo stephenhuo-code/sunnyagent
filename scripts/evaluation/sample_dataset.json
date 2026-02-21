@@ -1,0 +1,148 @@
+{
+  "name": "sunnyagent-basic-evaluation",
+  "description": "Basic evaluation dataset for SunnyAgent capabilities",
+  "items": [
+    {
+      "id": "greeting-01",
+      "input": {
+        "message": "你好，请介绍一下自己"
+      },
+      "expected_output": {
+        "contains": ["AI", "助手"],
+        "type": "greeting"
+      },
+      "metadata": {
+        "category": "greeting",
+        "difficulty": "easy"
+      }
+    },
+    {
+      "id": "math-01",
+      "input": {
+        "message": "计算 (15 + 27) * 3 的结果"
+      },
+      "expected_output": {
+        "answer": 126,
+        "type": "calculation"
+      },
+      "metadata": {
+        "category": "math",
+        "difficulty": "easy"
+      }
+    },
+    {
+      "id": "math-02",
+      "input": {
+        "message": "如果一个商品原价100元，打8折后再减10元，最终价格是多少？"
+      },
+      "expected_output": {
+        "answer": 70,
+        "type": "calculation"
+      },
+      "metadata": {
+        "category": "math",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "code-01",
+      "input": {
+        "message": "用Python写一个函数，计算斐波那契数列的第n项"
+      },
+      "expected_output": {
+        "contains_code": true,
+        "language": "python",
+        "type": "code_generation"
+      },
+      "metadata": {
+        "category": "coding",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "code-02",
+      "input": {
+        "message": "写一个Python脚本，生成一个包含1到100的随机数列表，然后计算平均值"
+      },
+      "expected_output": {
+        "contains_code": true,
+        "should_execute": true,
+        "type": "code_execution"
+      },
+      "metadata": {
+        "category": "coding",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "analysis-01",
+      "input": {
+        "message": "分析以下销售数据的趋势：1月-100万，2月-120万，3月-110万，4月-150万，5月-180万"
+      },
+      "expected_output": {
+        "contains": ["增长", "趋势"],
+        "type": "data_analysis"
+      },
+      "metadata": {
+        "category": "analysis",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "knowledge-01",
+      "input": {
+        "message": "什么是机器学习中的过拟合？如何避免？"
+      },
+      "expected_output": {
+        "contains": ["训练数据", "泛化"],
+        "type": "knowledge"
+      },
+      "metadata": {
+        "category": "knowledge",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "reasoning-01",
+      "input": {
+        "message": "小明比小红大3岁，小红比小华小2岁，小华今年10岁。请问小明今年几岁？"
+      },
+      "expected_output": {
+        "answer": 11,
+        "type": "reasoning"
+      },
+      "metadata": {
+        "category": "reasoning",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "summarize-01",
+      "input": {
+        "message": "请用三句话总结人工智能的发展历史"
+      },
+      "expected_output": {
+        "max_sentences": 5,
+        "type": "summarization"
+      },
+      "metadata": {
+        "category": "summarization",
+        "difficulty": "medium"
+      }
+    },
+    {
+      "id": "creative-01",
+      "input": {
+        "message": "请帮我想5个适合科技公司的创意名字"
+      },
+      "expected_output": {
+        "min_items": 5,
+        "type": "creative"
+      },
+      "metadata": {
+        "category": "creative",
+        "difficulty": "easy"
+      }
+    }
+  ]
+}

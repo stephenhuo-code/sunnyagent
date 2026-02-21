@@ -6,13 +6,13 @@ import { useSkills } from "./hooks/useSkills";
 import { LoginPage } from "./components/Auth/LoginPage";
 import { MainLayout } from "./components/Layout/MainLayout";
 import { ConversationList } from "./components/Conversations";
-import { UserManagement } from "./components/Admin";
+import { AdminPanel } from "./components/Admin";
 import ChatContainer from "./components/ChatContainer";
 import { ProjectList, ProjectHome, ProjectWorkspace } from "./components/Projects";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { getConversation } from "./api/conversations";
 
-type View = "chat" | "admin" | "project";
+type View = "chat" | "project";
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -21,10 +21,23 @@ function AppContent() {
   const [chatKey, setChatKey] = useState(0);
   const [showProjectHome, setShowProjectHome] = useState(true);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [showAdminModal, setShowAdminModal] = useState(false);
 
   const conversations = useConversations();
   const projects = useProjects();
   const { skills } = useSkills();
+  const [createProjectTrigger, setCreateProjectTrigger] = useState(0);
+
+  // Close admin modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showAdminModal) {
+        setShowAdminModal(false);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showAdminModal]);
 
   // Restore selected conversation on page load
   useEffect(() => {
@@ -87,7 +100,7 @@ function AppContent() {
   }, [conversations]);
 
   const handleShowAdmin = useCallback(() => {
-    setCurrentView("admin");
+    setShowAdminModal(true);
   }, []);
 
   const handleSelectProject = useCallback(async (id: string) => {
@@ -163,6 +176,62 @@ function AppContent() {
     }
   }, [projects, conversations]);
 
+  // Handle adding a new conversation in project from sidebar
+  const handleAddConversationInProject = useCallback(async (projectId: string) => {
+    try {
+      // 1. Create new conversation in the project
+      const conv = await conversations.createInProject(projectId);
+
+      // 2. Select the project and conversation
+      projects.select(projectId);
+      conversations.select(conv.id);
+
+      // 3. Set up chat context
+      setCurrentThreadId(conv.thread_id);
+      setChatKey((prev) => prev + 1);
+
+      // 4. Switch to project view and exit home
+      setCurrentView("project");
+      setShowProjectHome(false);
+
+      // 5. Refresh project conversations list
+      await projects.loadConversations(projectId);
+    } catch (err) {
+      console.error("Failed to create conversation in project:", err);
+    }
+  }, [projects, conversations]);
+
+  // Handle deleting a conversation from project sidebar
+  const handleDeleteConversationInProject = useCallback(async (conversationId: string) => {
+    try {
+      await conversations.remove(conversationId);
+      // Refresh project conversations list
+      if (projects.selectedProjectId) {
+        await projects.loadConversations(projects.selectedProjectId);
+      }
+      // If the deleted conversation was selected, clear selection
+      if (conversations.selectedId === conversationId) {
+        setCurrentThreadId(null);
+        setShowProjectHome(true);
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+    }
+  }, [conversations, projects]);
+
+  // Handle renaming a conversation from project sidebar
+  const handleRenameConversationInProject = useCallback(async (conversationId: string, title: string) => {
+    try {
+      await conversations.update(conversationId, title);
+      // Refresh project conversations list
+      if (projects.selectedProjectId) {
+        await projects.loadConversations(projects.selectedProjectId);
+      }
+    } catch (err) {
+      console.error("Failed to rename conversation:", err);
+    }
+  }, [conversations, projects]);
+
 
   // Handle file upload trigger from project home
   const handleUploadFileFromHome = useCallback(() => {
@@ -178,6 +247,11 @@ function AppContent() {
     };
     input.click();
   }, [projects]);
+
+  // Handle opening the create project modal (must be before conditional returns)
+  const handleOpenCreateProjectModal = useCallback(() => {
+    setCreateProjectTrigger(prev => prev + 1);
+  }, []);
 
   if (isLoading) {
     return (
@@ -210,6 +284,7 @@ function AppContent() {
   const renderProjectsList = (collapsed: boolean) => (
     <ProjectList
       projects={projects.projects}
+      openCreateModalTrigger={createProjectTrigger}
       isLoading={projects.isLoading}
       error={projects.error}
       selectedProjectId={projects.selectedProjectId}
@@ -224,6 +299,9 @@ function AppContent() {
       onLoadConversations={projects.loadConversations}
       onSelectConversation={handleProjectConversationSelect}
       onRemoveConversation={handleRemoveConversationFromProject}
+      onDeleteConversation={handleDeleteConversationInProject}
+      onRenameConversation={handleRenameConversationInProject}
+      onAddConversation={handleAddConversationInProject}
     />
   );
 
@@ -231,57 +309,80 @@ function AppContent() {
   const currentProject = projects.projects.find(p => p.id === projects.selectedProjectId);
 
   return (
-    <MainLayout
-      onNewConversation={handleNewConversation}
-      onShowAdmin={handleShowAdmin}
-      conversationList={renderConversationList}
-      projectsSection={renderProjectsList}
-      conversations={conversations.conversations}
-      conversationsLoading={conversations.isLoading}
-      conversationsError={conversations.error}
-      selectedConversationId={conversations.selectedId}
-      onSelectConversation={handleSelectConversation}
-      onUpdateConversation={conversations.update}
-      onDeleteConversation={conversations.remove}
-    >
-      {currentView === "chat" && (
-        <ChatContainer key={chatKey} initialThreadId={currentThreadId} />
+    <>
+      <MainLayout
+        onNewConversation={handleNewConversation}
+        onShowAdmin={handleShowAdmin}
+        conversationList={renderConversationList}
+        projectsSection={renderProjectsList}
+        conversations={conversations.historyConversations}
+        conversationsLoading={conversations.isLoading}
+        conversationsError={conversations.error}
+        selectedConversationId={conversations.selectedId}
+        onSelectConversation={handleSelectConversation}
+        onUpdateConversation={conversations.update}
+        onDeleteConversation={conversations.remove}
+        onCreateProject={handleOpenCreateProjectModal}
+        projects={projects.projects}
+        projectsLoading={projects.isLoading}
+        projectsError={projects.error}
+        selectedProjectId={projects.selectedProjectId}
+        onSelectProject={handleSelectProject}
+      >
+        {currentView === "chat" && (
+          <ChatContainer key={chatKey} initialThreadId={currentThreadId} />
+        )}
+        {currentView === "project" && currentProject && (
+          showProjectHome ? (
+            <ProjectHome
+              project={currentProject}
+              files={projects.files}
+              conversations={projects.getConversations(currentProject.id)}
+              conversationsLoading={projects.isConversationsLoading(currentProject.id)}
+              skills={skills}
+              onCreateConversation={handleCreateConversationFromHome}
+              onSelectConversation={(convId) => handleProjectConversationSelect(convId, currentProject.id)}
+              onUploadFile={handleUploadFileFromHome}
+            />
+          ) : (
+            <ProjectWorkspace
+              projectId={currentProject.id}
+              projectName={currentProject.name}
+              threadId={currentThreadId}
+              files={projects.files}
+              filesLoading={projects.filesLoading}
+              selectedFileIds={projects.selectedFileIds}
+              uploadingFiles={projects.uploadingFiles}
+              onLoadFiles={projects.loadFiles}
+              onUploadFile={projects.uploadFile}
+              onDeleteFile={projects.removeFile}
+              onRenameFile={projects.renameFile}
+              onToggleFileSelection={projects.toggleFileSelection}
+              onSelectAllFiles={projects.selectAllFiles}
+              onClearFileSelection={projects.clearFileSelection}
+              onConversationCreated={handleProjectConversationCreated}
+              initialMessage={pendingMessage}
+            />
+          )
+        )}
+      </MainLayout>
+
+      {/* Admin Modal */}
+      {showAdminModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowAdminModal(false)}>
+          <div className="admin-modal-container" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="admin-modal-close"
+              onClick={() => setShowAdminModal(false)}
+              aria-label="Close admin panel"
+            >
+              <X size={20} />
+            </button>
+            <AdminPanel />
+          </div>
+        </div>
       )}
-      {currentView === "admin" && <UserManagement />}
-      {currentView === "project" && currentProject && (
-        showProjectHome ? (
-          <ProjectHome
-            project={currentProject}
-            files={projects.files}
-            conversations={projects.getConversations(currentProject.id)}
-            conversationsLoading={projects.isConversationsLoading(currentProject.id)}
-            skills={skills}
-            onCreateConversation={handleCreateConversationFromHome}
-            onSelectConversation={(convId) => handleProjectConversationSelect(convId, currentProject.id)}
-            onUploadFile={handleUploadFileFromHome}
-          />
-        ) : (
-          <ProjectWorkspace
-            projectId={currentProject.id}
-            projectName={currentProject.name}
-            threadId={currentThreadId}
-            files={projects.files}
-            filesLoading={projects.filesLoading}
-            selectedFileIds={projects.selectedFileIds}
-            uploadingFiles={projects.uploadingFiles}
-            onLoadFiles={projects.loadFiles}
-            onUploadFile={projects.uploadFile}
-            onDeleteFile={projects.removeFile}
-            onRenameFile={projects.renameFile}
-            onToggleFileSelection={projects.toggleFileSelection}
-            onSelectAllFiles={projects.selectAllFiles}
-            onClearFileSelection={projects.clearFileSelection}
-            onConversationCreated={handleProjectConversationCreated}
-            initialMessage={pendingMessage}
-          />
-        )
-      )}
-    </MainLayout>
+    </>
   );
 }
 

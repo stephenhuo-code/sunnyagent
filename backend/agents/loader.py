@@ -34,6 +34,7 @@ from deepagents.backends.filesystem import FilesystemBackend
 
 from backend.llm import get_model
 from backend.registry import register_agent
+from backend.checkpointer_store import get_checkpointer
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ def _register_package(pkg_dir: Path) -> None:
         skills=skills,
         memory=memory,
         name=agent_name,
+        checkpointer=get_checkpointer(),
     )
 
     register_agent(

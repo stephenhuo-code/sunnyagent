@@ -7,6 +7,7 @@ from backend.aime.intent.classifiers.base import ClassifierBase
 from backend.aime.intent.classifiers.llm_based import LLMClassifier
 from backend.aime.intent.classifiers.rule_based import RuleBasedClassifier
 from backend.aime.intent.models import IntentResult
+from backend.services.langfuse_service import get_langfuse_service
 
 if TYPE_CHECKING:
     from backend.aime.context import AgentContext
@@ -114,13 +115,51 @@ class IntentAnalyzer:
 
         domain = context_dict.get("domain")
 
+        # Get Langfuse client for tracing
+        langfuse_service = get_langfuse_service()
+        langfuse_client = langfuse_service.get_client() if langfuse_service.enabled else None
+
         for classifier in self._classifiers:
             try:
+                # Create Langfuse span for each classifier
+                context_manager = None
+                span = None
+                if langfuse_client:
+                    try:
+                        context_manager = langfuse_client.start_as_current_observation(
+                            as_type="span",
+                            name=f"intent-classifier-{classifier.name}",
+                            input={"message_preview": intent_message[:200]},
+                        )
+                        span = context_manager.__enter__()
+                    except Exception:
+                        pass
+
                 result = await classifier.classify(
                     message=intent_message,
                     context=context_dict,
                     domain=domain,
                 )
+
+                # Update span with result
+                if span:
+                    try:
+                        if result:
+                            span.update(output={
+                                "action": result.action,
+                                "confidence": result.confidence,
+                                "matched": True,
+                            })
+                        else:
+                            span.update(output={"matched": False})
+                    except Exception:
+                        pass
+                if context_manager:
+                    try:
+                        context_manager.__exit__(None, None, None)
+                    except Exception:
+                        pass
+
                 if result is not None:
                     logger.debug(
                         f"Intent classified by {classifier.name}: "
@@ -129,6 +168,16 @@ class IntentAnalyzer:
                     return result
             except Exception as e:
                 logger.warning(f"Classifier {classifier.name} failed: {e}")
+                if span:
+                    try:
+                        span.update(output={"error": str(e)})
+                    except Exception:
+                        pass
+                if context_manager:
+                    try:
+                        context_manager.__exit__(None, None, None)
+                    except Exception:
+                        pass
                 continue
 
         # No classifier matched - default to direct_reply with low confidence

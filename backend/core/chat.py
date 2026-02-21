@@ -34,6 +34,11 @@ def set_agent(agent):
     _agent = agent
 
 
+def get_agent():
+    """Get the current agent reference for state persistence."""
+    return _agent
+
+
 def get_uploaded_file_info(file_id: str) -> FileInfo | None:
     """Get uploaded file metadata (returns FileInfo object)."""
     file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")

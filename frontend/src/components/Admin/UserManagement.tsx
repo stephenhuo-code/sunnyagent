@@ -114,6 +114,9 @@ export function UserManagement() {
           <Users size={24} />
           <h1>用户管理</h1>
         </div>
+      </div>
+
+      <div className="admin-toolbar">
         <button
           className="btn-primary"
           onClick={() => setShowCreateForm(true)}

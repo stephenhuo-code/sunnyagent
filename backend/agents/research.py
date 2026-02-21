@@ -11,6 +11,7 @@ from backend.research_prompts import RESEARCHER_INSTRUCTIONS
 from backend.research_tools import tavily_search, think_tool
 from backend.skills import SKILL_REGISTRY
 from backend.tools.file_tools import read_file
+from backend.checkpointer_store import get_checkpointer
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ _agent = create_deep_agent(
     tools=_tools,
     system_prompt=_build_system_prompt(),
     name="research",
+    checkpointer=get_checkpointer(),
 )
 
 register_agent(

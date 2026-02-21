@@ -3,7 +3,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { MessageSquare, Trash2, Check, X, Pencil, FolderPlus, Loader2 } from "lucide-react";
+import { MessageSquare, Trash2, Check, X, Pencil, FolderPlus, Loader2, MoreVertical } from "lucide-react";
 import type { ConversationSummary } from "../../api/conversations";
 import type { ProjectSummary } from "../../api/projects";
 import "./Conversations.css";
@@ -20,29 +20,6 @@ interface ConversationItemProps {
   onAddToProject?: (conversationId: string, projectId: string) => Promise<void>;
 }
 
-function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) {
-    return date.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } else if (days === 1) {
-    return "昨天";
-  } else if (days < 7) {
-    return date.toLocaleDateString(undefined, { weekday: "short" });
-  } else {
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  }
-}
-
 export function ConversationItem({
   conversation,
   isSelected,
@@ -56,10 +33,11 @@ export function ConversationItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showProjectSubmenu, setShowProjectSubmenu] = useState(false);
   const [addingToProject, setAddingToProject] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -68,18 +46,19 @@ export function ConversationItem({
     }
   }, [isEditing]);
 
-  // Close project menu when clicking outside
+  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
-        setShowProjectMenu(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+        setShowProjectSubmenu(false);
       }
     };
-    if (showProjectMenu) {
+    if (showMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showProjectMenu]);
+  }, [showMenu]);
 
   const handleDoubleClick = () => {
     if (!collapsed) {
@@ -109,15 +88,25 @@ export function ConversationItem({
     }
   };
 
-  const handleEditClick = (e: React.MouseEvent) => {
+  const handleMenuClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditTitle(conversation.title);
-    setIsEditing(true);
+    setShowMenu(!showMenu);
+    setShowProjectSubmenu(false);
   };
 
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRename = () => {
+    setEditTitle(conversation.title);
+    setIsEditing(true);
+    setShowMenu(false);
+  };
+
+  const handleDelete = () => {
+    setShowMenu(false);
     setShowDeleteConfirm(true);
+  };
+
+  const handleAddToProjectHover = () => {
+    setShowProjectSubmenu(true);
   };
 
   const handleConfirmDelete = (e: React.MouseEvent) => {
@@ -131,11 +120,6 @@ export function ConversationItem({
     setShowDeleteConfirm(false);
   };
 
-  const handleAddToProjectClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowProjectMenu(true);
-  };
-
   const handleSelectProject = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
     if (!onAddToProject) return;
@@ -143,7 +127,8 @@ export function ConversationItem({
     setAddingToProject(projectId);
     try {
       await onAddToProject(conversation.id, projectId);
-      setShowProjectMenu(false);
+      setShowMenu(false);
+      setShowProjectSubmenu(false);
     } catch (err) {
       console.error('Failed to add to project:', err);
     } finally {
@@ -158,7 +143,7 @@ export function ConversationItem({
         onClick={onSelect}
         title={conversation.title}
       >
-        <MessageSquare size={16} />
+        <MessageSquare size={14} />
       </button>
     );
   }
@@ -169,7 +154,7 @@ export function ConversationItem({
       onClick={onSelect}
       onDoubleClick={handleDoubleClick}
     >
-      <MessageSquare size={16} className="conversation-icon" />
+      <MessageSquare size={14} className="conversation-icon" />
 
       {isEditing ? (
         <div className="conversation-edit" onClick={(e) => e.stopPropagation()}>
@@ -191,14 +176,9 @@ export function ConversationItem({
         </div>
       ) : (
         <>
-          <div className="conversation-info">
-            <span className="conversation-title" title={conversation.title}>
-              {conversation.title}
-            </span>
-            <span className="conversation-time">
-              {formatTime(conversation.updated_at)}
-            </span>
-          </div>
+          <span className="conversation-title" title={conversation.title}>
+            {conversation.title}
+          </span>
 
           {showDeleteConfirm ? (
             <div
@@ -213,48 +193,49 @@ export function ConversationItem({
               </button>
             </div>
           ) : (
-            <div className="conversation-actions">
-              {projects.length > 0 && onAddToProject && (
-                <div className="project-menu-container" ref={projectMenuRef}>
-                  <button
-                    className="action-btn project-btn"
-                    onClick={handleAddToProjectClick}
-                    title="添加到项目"
-                  >
-                    <FolderPlus size={14} />
-                  </button>
-                  {showProjectMenu && (
-                    <div className="conversation-project-menu">
-                      <div className="conversation-project-menu-header">添加到项目</div>
-                      {projects.map((project) => (
-                        <button
-                          key={project.id}
-                          className="conversation-project-menu-item"
-                          onClick={(e) => handleSelectProject(e, project.id)}
-                          disabled={addingToProject !== null}
-                        >
-                          <span>{project.name}</span>
-                          {addingToProject === project.id && <Loader2 size={12} className="spin" />}
-                        </button>
-                      ))}
+            <div className="conversation-menu-wrapper" ref={menuRef}>
+              <button className="conversation-menu-btn" onClick={handleMenuClick}>
+                <MoreVertical size={14} />
+              </button>
+
+              {showMenu && (
+                <div className="conversation-menu">
+                  {projects.length > 0 && onAddToProject && (
+                    <div
+                      className="conversation-menu-item-with-submenu"
+                      onMouseEnter={handleAddToProjectHover}
+                    >
+                      <button>
+                        <FolderPlus size={14} />
+                        添加到项目
+                      </button>
+                      {showProjectSubmenu && (
+                        <div className="conversation-project-submenu">
+                          {projects.map((project) => (
+                            <button
+                              key={project.id}
+                              className="conversation-project-submenu-item"
+                              onClick={(e) => handleSelectProject(e, project.id)}
+                              disabled={addingToProject !== null}
+                            >
+                              <span>{project.name}</span>
+                              {addingToProject === project.id && <Loader2 size={12} className="spin" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
+                  <button onClick={handleRename}>
+                    <Pencil size={14} />
+                    重命名
+                  </button>
+                  <button className="danger" onClick={handleDelete}>
+                    <Trash2 size={14} />
+                    删除对话
+                  </button>
                 </div>
               )}
-              <button
-                className="action-btn edit-btn"
-                onClick={handleEditClick}
-                title="重命名"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                className="action-btn delete-btn"
-                onClick={handleDeleteClick}
-                title="删除对话"
-              >
-                <Trash2 size={14} />
-              </button>
             </div>
           )}
         </>

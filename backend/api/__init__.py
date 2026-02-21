@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from backend.auth.router import router as auth_router, users_router
 from backend.conversations.router import router as conversations_router
 from backend.projects.router import router as projects_router
-from backend.core import chat_router, files_router, skills_router
+from backend.core import chat_router, files_router, skills_router, system_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -19,6 +19,7 @@ def register_routers(app: FastAPI) -> None:
     - chat_router: /api/chat, /api/threads/*
     - files_router: /api/files/*
     - skills_router: /api/agents, /api/skills/*
+    - system_router: /api/system/* (admin-only system settings)
     """
     # Domain routers (with prefix defined in router)
     app.include_router(auth_router)
@@ -30,6 +31,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(chat_router)
     app.include_router(files_router)
     app.include_router(skills_router)
+    app.include_router(system_router)
 
 
 __all__ = [
@@ -41,4 +43,5 @@ __all__ = [
     "chat_router",
     "files_router",
     "skills_router",
+    "system_router",
 ]

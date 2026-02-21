@@ -1,0 +1,123 @@
+{
+  "description": "SunnyAgent 工具 JSON Schemas - 用于 Langfuse Playground 测试",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "execute_python",
+      "description": "在沙箱环境中执行 Python 代码。支持数据处理、计算、文件生成等操作。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "要执行的 Python 代码"
+          }
+        },
+        "required": ["code"]
+      }
+    },
+    {
+      "name": "execute_python_with_file",
+      "description": "执行 Python 代码并将文件传入沙箱。适用于需要处理用户上传文件的场景。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "要执行的 Python 代码"
+          },
+          "file_id": {
+            "type": "string",
+            "description": "要传入沙箱的文件 ID"
+          }
+        },
+        "required": ["code", "file_id"]
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "读取文件内容。支持上传文件和项目文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "文件 ID"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "项目 ID（可选，用于读取项目文件）"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "文件编码（默认 utf-8）",
+            "default": "utf-8"
+          }
+        },
+        "required": ["file_id"]
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "搜索网络获取信息。使用 Tavily API 进行网络搜索。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "搜索查询"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "最大结果数量",
+            "default": 5
+          },
+          "search_depth": {
+            "type": "string",
+            "enum": ["basic", "advanced"],
+            "description": "搜索深度",
+            "default": "basic"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "activate_skill",
+      "description": "激活技能以获取详细指令。当用户请求匹配某个技能的描述时使用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skill_name": {
+            "type": "string",
+            "description": "技能名称（如 pdf、docx、xlsx）"
+          }
+        },
+        "required": ["skill_name"]
+      }
+    },
+    {
+      "name": "sql_query",
+      "description": "执行 SQL 查询。仅限 SELECT 语句，用于数据查询。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "SQL SELECT 查询语句"
+          },
+          "database": {
+            "type": "string",
+            "description": "数据库名称"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ],
+  "usage": {
+    "playground": "在 Langfuse Playground 中点击 'Add Tool'，粘贴单个工具的 JSON Schema",
+    "api": "在 API 调用中作为 tools 参数传入",
+    "example": "从 tools 数组中选择需要的工具，格式化为 OpenAI Function Calling 格式"
+  }
+}

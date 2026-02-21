@@ -8,9 +8,16 @@ SunnyAgent — a full-stack web app (FastAPI + React) with a LangGraph superviso
 
 ## Development Commands
 
+### Quick Start (Recommended)
+```bash
+./scripts/start.sh infra      # Start PostgreSQL + Langfuse
+./scripts/start.sh backend    # Start backend (in new terminal)
+./scripts/start.sh frontend   # Start frontend (in new terminal)
+```
+
 ### Prerequisites
 ```bash
-docker compose up -d          # Start PostgreSQL database
+docker compose up -d          # Start PostgreSQL + Langfuse
 ```
 
 ### Backend (Python, managed with `uv`)
@@ -56,6 +63,15 @@ cd frontend && npx tsc      # TypeScript checking
 - `JWT_SECRET_KEY` — for JWT signing (auto-generated if not set)
 - `JWT_EXPIRATION` — token expiration in seconds (default: 86400 = 24h)
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — default admin credentials on first startup
+
+**Langfuse Observability (Optional):**
+- `LANGFUSE_TRACING_ENABLED` — Enable/disable tracing (default: `true`, set to `false` to completely disable)
+- `LANGFUSE_BASE_URL` — Langfuse server URL (default: `http://localhost:3001`)
+- `LANGFUSE_PUBLIC_KEY` — Langfuse public key for tracing
+- `LANGFUSE_SECRET_KEY` — Langfuse secret key for tracing
+- `LANGFUSE_ORG_PUBLIC_KEY` — Langfuse organization public key for user sync
+- `LANGFUSE_ORG_SECRET_KEY` — Langfuse organization secret key for user sync
+- `LANGFUSE_SAMPLE_RATE` — Trace sampling rate 0.0-1.0 (default: 1.0)
 
 ## Architecture
 
@@ -182,10 +198,12 @@ User → Supervisor (LLM router)
 - **sse-starlette** — server-sent events for FastAPI
 - **docker** — container pool for sandboxed code execution
 - **pypdf** / **python-docx** / **openpyxl** / **python-pptx** — document parsing
+- **langfuse** (>=3.0.0) — observability platform for LLM tracing and monitoring
 
 ### Infrastructure
 - **PostgreSQL 15** — primary database (via docker-compose)
 - **Docker** — containerized code execution sandbox
+- **Langfuse** (optional) — LLM observability platform for tracing Agent execution
 
 ## Project Structure
 
@@ -336,6 +354,7 @@ See `docs/ai-dev-best-practices.md` for full AI-assisted development guidelines.
 - N/A（配置通过环境变量） (004-unified-llm-provider)
 - Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, React 19, LangGraph, asyncpg (006-project-management)
 - PostgreSQL (projects, project_files 表), 文件系统 (项目文件永久存储) (006-project-management)
+- PostgreSQL (复用 SunnyAgent 现有数据库，Langfuse 独立 schema) (007-langfuse-integration)
 
 ## Recent Changes
 - 004-unified-llm-provider: Added Python 3.11+ + litellm, langchain, pyyaml, python-dotenv
