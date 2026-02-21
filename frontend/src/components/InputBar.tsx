@@ -13,7 +13,6 @@ const ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
 const AGENT_LABELS: Record<string, string> = {
   research: "深度研究",
   sql: "数据库",
-  general: "通用",
 };
 
 const ALLOWED_EXTENSIONS = [
@@ -60,12 +59,8 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
   // Get completed files
   const completedFiles = uploadingFiles.filter(f => f.status === "completed" && f.uploadedFile);
 
-  // Auto-select general agent when files are uploaded (only general agent has read_uploaded_file tool)
-  useEffect(() => {
-    if (completedFiles.length > 0 && !selectedAgent) {
-      setSelectedAgent("general");
-    }
-  }, [completedFiles.length, selectedAgent]);
+  // Note: File uploads are now handled by AIME's generic actor
+  // No need to auto-select an agent - the system will route appropriately
 
   // Handle file selection
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,11 +289,7 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
       {/* Agent selector chips - hidden when an agent is selected */}
       {!selectedAgent && (
         <div className="agent-selector">
-          {[...agents].sort((a, b) => {
-            if (a.name === "general") return -1;
-            if (b.name === "general") return 1;
-            return 0;
-          }).map((agent) => {
+          {[...agents].sort((a, b) => a.name.localeCompare(b.name)).map((agent) => {
             const AgentIcon = ICONS[agent.icon] ?? Bot;
             const label = AGENT_LABELS[agent.name] ?? agent.name;
             return (

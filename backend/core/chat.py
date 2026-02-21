@@ -91,7 +91,7 @@ async def chat(request: ChatRequest, current_user: UserInfo = Depends(get_curren
     """Send a message and stream the agent's response as SSE events.
 
     Routing priority:
-    1. If request.skill is set, inject skill instructions and use general agent
+    1. If request.skill is set, inject skill instructions (handled by AIME)
     2. If request.agent is set, route directly to that agent (skip supervisor)
     3. Otherwise, use the supervisor for intent-based routing
 

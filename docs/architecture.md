@@ -67,7 +67,6 @@ User → IntentAnalyzer (Rule → LLM 分类器链)
 |-------|------|
 | sql | sql_db_query, sql_db_schema, sql_db_list_tables, read_file |
 | research | tavily_search, think_tool, read_file |
-| general | task, read_file, execute_python, activate_skill |
 | generic | read_file, execute_python, activate_skill |
 
 **Context 聚合 - AgentContext：**
@@ -231,7 +230,7 @@ InputBar 支持 `/command` 语法直接路由到指定 Agent（绕过 Supervisor
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Agent Layer (agents/)                    │
-│   supervisor.py → [research, analysis, quality, general]    │
+│   supervisor.py → [research, sql] + AIME generic actor      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -335,8 +334,8 @@ API → Agent → Service → Repository → Database
 ## 添加新 Agent
 
 1. 创建 `backend/agents/new_agent.py` — 使用 `create_deep_agent()` + `register_agent()`
-2. 在 `backend/agents/__init__.py` 中导入，**必须在 `build_general_agent()` 之前**
-3. 重启后端 — Supervisor 和 general agent 自动发现
+2. 在 `backend/agents/__init__.py` 中导入
+3. 重启后端 — AIME planner 通过 registry 自动发现
 
 ## 添加 Package Agent
 
@@ -431,7 +430,6 @@ sunnyagent/
 │   ├── agents/              # Deep agents
 │   │   ├── research.py      # 网络研究 agent（有 read_file）
 │   │   ├── sql.py           # SQL 数据库 agent（有 read_file）
-│   │   ├── general.py       # 通用编排器
 │   │   └── loader.py        # Package agent 加载器
 │   ├── services/            # 业务逻辑层
 │   │   └── langfuse_service.py  # Langfuse 客户端和用量统计

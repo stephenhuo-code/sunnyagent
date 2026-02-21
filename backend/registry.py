@@ -85,7 +85,7 @@ def get_agent_descriptions() -> str:
 
 
 def get_all_tools() -> list:
-    """Collect all unique tools from registered agents (for the general agent)."""
+    """Collect all unique tools from registered agents."""
     seen: set[str] = set()
     tools = []
     for entry in AGENT_REGISTRY.values():

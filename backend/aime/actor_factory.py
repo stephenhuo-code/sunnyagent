@@ -198,21 +198,12 @@ class ActorFactory:
     def create_generic_actor(self, spec: SubtaskSpec) -> Actor:
         """Create a generic actor as fallback.
 
-        Uses the 'general' agent if registered, otherwise creates
-        a dynamic generic actor with standard tools.
-
         Args:
             spec: Subtask specification
 
         Returns:
             Generic Actor with standard tools
         """
-        # Use 'general' agent if available
-        if "general" in AGENT_REGISTRY:
-            entry = AGENT_REGISTRY["general"]
-            return self._create_actor_from_entry(entry, spec)
-
-        # Create dynamic generic actor
         from backend.aime.actors.generic import create_generic_actor
 
         logger.info("Creating dynamic generic actor")

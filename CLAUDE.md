@@ -102,16 +102,6 @@ User → IntentAnalyzer → AIMEPlanner
 - `backend/aime/actor_factory.py` — 动态 Agent 选择
 - `backend/aime/progress_manager.py` — 进度追踪与 SSE 事件
 
-### 快速概览
-
-```
-User → Supervisor (LLM router)
-         ├─ Direct answer
-         ├─ → "research" agent (Tavily)
-         ├─ → "sql" agent (SQL queries)
-         └─ → "general" agent (orchestrator)
-```
-
 **核心组件：**
 - `backend/supervisor.py` — 路由到专业 Agent
 - `backend/registry.py` — Agent 自注册中心
@@ -122,8 +112,8 @@ User → Supervisor (LLM router)
 ## Adding a New Agent
 
 1. Create `backend/agents/new_agent.py` — use `create_deep_agent()` + `register_agent()`
-2. Import it in `backend/agents/__init__.py` **before** `build_general_agent()`
-3. Restart backend — supervisor and general agent auto-discover it
+2. Import it in `backend/agents/__init__.py`
+3. Restart backend — AIME planner auto-discovers it via registry
 
 ## Adding a Package Agent
 

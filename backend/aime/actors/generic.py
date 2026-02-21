@@ -89,7 +89,7 @@ def create_generic_actor(spec: SubtaskSpec | None = None) -> Actor:
         activate_skill,
     ]
 
-    model = get_model("general")
+    model = get_model("generic")
 
     # Build system prompt
     system_prompt = _build_generic_prompt()
