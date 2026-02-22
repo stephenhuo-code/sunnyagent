@@ -347,6 +347,8 @@ See `docs/ai-dev-best-practices.md` for full AI-assisted development guidelines.
 - Python 3.11+ (backend), TypeScript 5.x (frontend) + FastAPI, React 19, LangGraph, asyncpg (006-project-management)
 - PostgreSQL (projects, project_files 表), 文件系统 (项目文件永久存储) (006-project-management)
 - PostgreSQL (复用 SunnyAgent 现有数据库，Langfuse 独立 schema) (007-langfuse-integration)
+- Python 3.11+ (Backend), TypeScript 5.x (Frontend) + FastAPI, React 19, LangGraph, deepagents, asyncpg (012-plugin-management)
+- PostgreSQL (插件状态、评分)，文件系统 (上传的插件包) (012-plugin-management)
 
 ## Recent Changes
 - 004-unified-llm-provider: Added Python 3.11+ + litellm, langchain, pyyaml, python-dotenv
