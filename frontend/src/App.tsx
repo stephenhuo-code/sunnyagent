@@ -13,7 +13,7 @@ import { PluginsPage } from "./pages/PluginsPage";
 import { Loader2, X } from "lucide-react";
 import { getConversation } from "./api/conversations";
 
-type View = "chat" | "project" | "plugins";
+type View = "chat" | "project";
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -23,22 +23,24 @@ function AppContent() {
   const [showProjectHome, setShowProjectHome] = useState(true);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showPluginsModal, setShowPluginsModal] = useState(false);
 
   const conversations = useConversations();
   const projects = useProjects();
   const { skills } = useSkills();
   const [createProjectTrigger, setCreateProjectTrigger] = useState(0);
 
-  // Close admin modal on Escape key
+  // Close modals on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && showAdminModal) {
-        setShowAdminModal(false);
+      if (e.key === "Escape") {
+        if (showAdminModal) setShowAdminModal(false);
+        if (showPluginsModal) setShowPluginsModal(false);
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [showAdminModal]);
+  }, [showAdminModal, showPluginsModal]);
 
   // Restore selected conversation on page load
   useEffect(() => {
@@ -254,9 +256,9 @@ function AppContent() {
     setCreateProjectTrigger(prev => prev + 1);
   }, []);
 
-  // Handle showing plugins page
+  // Handle showing plugins modal
   const handleShowPlugins = useCallback(() => {
-    setCurrentView("plugins");
+    setShowPluginsModal(true);
   }, []);
 
   if (isLoading) {
@@ -339,7 +341,6 @@ function AppContent() {
         {currentView === "chat" && (
           <ChatContainer key={chatKey} initialThreadId={currentThreadId} />
         )}
-        {currentView === "plugins" && <PluginsPage />}
         {currentView === "project" && currentProject && (
           showProjectHome ? (
             <ProjectHome
@@ -387,6 +388,22 @@ function AppContent() {
               <X size={20} />
             </button>
             <AdminPanel />
+          </div>
+        </div>
+      )}
+
+      {/* Plugins Modal */}
+      {showPluginsModal && (
+        <div className="plugins-modal-overlay" onClick={() => setShowPluginsModal(false)}>
+          <div className="plugins-modal-container" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="plugins-modal-close"
+              onClick={() => setShowPluginsModal(false)}
+              aria-label="Close plugins panel"
+            >
+              <X size={20} />
+            </button>
+            <PluginsPage />
           </div>
         </div>
       )}
