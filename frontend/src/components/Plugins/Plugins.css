@@ -328,6 +328,56 @@
   background: #9ca3af;
 }
 
+/* Hierarchical Tree Display */
+.plugin-tree-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.plugin-expand-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.plugin-expand-spacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* Sidebar nested skills list (hierarchical display) */
+.plugin-nested-skills {
+  margin-left: 20px;
+  border-left: 1px solid var(--border);
+}
+
+.plugin-skill-item {
+  padding-left: 12px !important;
+}
+
+.plugin-skill-item .plugin-icon {
+  font-size: 16px;
+}
+
+.plugin-skill-item .plugin-item-name {
+  font-size: 13px;
+}
+
 /* =============================================================================
    Detail Panel
    ============================================================================= */
