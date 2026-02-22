@@ -3,12 +3,13 @@
  */
 
 import { useState } from "react";
-import { Users, Settings } from "lucide-react";
+import { Users, Settings, Clock } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { SystemSettings } from "./SystemSettings";
+import { ScheduledTasks } from "./ScheduledTasks";
 import "./Admin.css";
 
-type AdminTab = "users" | "settings";
+type AdminTab = "users" | "scheduled-tasks" | "settings";
 
 export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<AdminTab>("users");
@@ -28,6 +29,13 @@ export function AdminPanel() {
             <span>用户管理</span>
           </button>
           <button
+            className={`admin-nav-item ${activeTab === "scheduled-tasks" ? "active" : ""}`}
+            onClick={() => setActiveTab("scheduled-tasks")}
+          >
+            <Clock size={18} />
+            <span>定时任务</span>
+          </button>
+          <button
             className={`admin-nav-item ${activeTab === "settings" ? "active" : ""}`}
             onClick={() => setActiveTab("settings")}
           >
@@ -39,6 +47,7 @@ export function AdminPanel() {
 
       <div className="admin-content">
         {activeTab === "users" && <UserManagement />}
+        {activeTab === "scheduled-tasks" && <ScheduledTasks />}
         {activeTab === "settings" && <SystemSettings />}
       </div>
     </div>

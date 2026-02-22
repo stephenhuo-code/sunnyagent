@@ -81,9 +81,22 @@ async def update_user_status(user_id: UUID, status: UserStatus) -> UserInfo | No
 
 
 async def delete_user(user_id: UUID) -> bool:
-    """Delete a user by ID."""
+    """Delete a user by ID.
+
+    Also cleans up:
+    - Langfuse user mapping
+    - Scheduled tasks, scripts, and logs
+    """
     # First delete user from Langfuse
     await _delete_user_from_langfuse(str(user_id))
+
+    # Clean up scheduled tasks data (T053)
+    try:
+        from backend.scheduled_tasks.cleanup import cleanup_user_tasks
+        await cleanup_user_tasks(user_id)
+        logger.info(f"Cleaned up scheduled tasks for user {user_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup scheduled tasks for user {user_id}: {e}")
 
     result = await execute("DELETE FROM users WHERE id = $1", user_id)
     return result == "DELETE 1"

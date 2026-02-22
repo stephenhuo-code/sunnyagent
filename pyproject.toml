@@ -32,6 +32,7 @@ dependencies = [
     "greenlet>=3.3.1",
     "langchain-litellm>=0.5.1",
     "langfuse>=3.0.0",
+    "apscheduler>=4.0.0a5",
 ]
 
 [build-system]

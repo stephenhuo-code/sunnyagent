@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from backend.aime.intent.classifiers.base import ClassifierBase
 from backend.aime.intent.classifiers.llm_based import LLMClassifier
 from backend.aime.intent.classifiers.rule_based import RuleBasedClassifier
+from backend.aime.intent.classifiers.scheduled_task import ScheduledTaskClassifier
 from backend.aime.intent.models import IntentResult
 from backend.services.langfuse_service import get_langfuse_service
 
@@ -33,9 +34,10 @@ class IntentAnalyzer:
             classifiers: Optional custom classifiers. If None, uses default chain.
         """
         if classifiers is None:
-            # Default classifier chain: rule-based + LLM
+            # Default classifier chain: rule-based + scheduled-task + LLM
             classifiers = [
                 RuleBasedClassifier(),
+                ScheduledTaskClassifier(),
                 LLMClassifier(),
             ]
 

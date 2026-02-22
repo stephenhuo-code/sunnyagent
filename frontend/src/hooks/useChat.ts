@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { createThread, streamChat, getThreadHistory } from "../api/client";
-import type { Message, ThinkingState, ToolCall, UploadedFile, DisplayScenario, SpawnedTask } from "../types";
+import type { Message, ThinkingState, ToolCall, UploadedFile, DisplayScenario, SpawnedTask, ScheduleTaskCreateData } from "../types";
 
 let msgCounter = 0;
 function nextId() {
@@ -24,6 +24,8 @@ function parseSkillCommand(text: string): { skill: string | null; message: strin
 interface UseChatOptions {
   initialThreadId?: string | null;
   onConversationCreated?: () => void;
+  /** Callback when a schedule_task_create event is received from chat */
+  onScheduleTaskCreate?: (data: ScheduleTaskCreateData) => void;
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -32,11 +34,16 @@ export function useChat(options: UseChatOptions = {}) {
   const [threadId, setThreadId] = useState<string | null>(options.initialThreadId ?? null);
   const abortRef = useRef<AbortController | null>(null);
   const onConversationCreatedRef = useRef(options.onConversationCreated);
+  const onScheduleTaskCreateRef = useRef(options.onScheduleTaskCreate);
 
-  // Keep ref up to date when callback changes
+  // Keep refs up to date when callbacks change
   useEffect(() => {
     onConversationCreatedRef.current = options.onConversationCreated;
   }, [options.onConversationCreated]);
+
+  useEffect(() => {
+    onScheduleTaskCreateRef.current = options.onScheduleTaskCreate;
+  }, [options.onScheduleTaskCreate]);
 
   const sendMessage = useCallback(
     async (text: string, agent?: string, uploadedFiles?: UploadedFile[], projectFileIds?: string[], projectId?: string) => {
@@ -349,6 +356,15 @@ export function useChat(options: UseChatOptions = {}) {
                     : m,
                 ),
               );
+              break;
+            }
+
+            case "schedule_task_create": {
+              // Trigger callback to open TaskForm modal with pre-filled data
+              console.log("[SCHEDULE_TASK_CREATE]", event.data);
+              if (onScheduleTaskCreateRef.current) {
+                onScheduleTaskCreateRef.current(event.data as ScheduleTaskCreateData);
+              }
               break;
             }
 

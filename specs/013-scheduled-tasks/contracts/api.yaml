@@ -1,0 +1,768 @@
+openapi: 3.1.0
+info:
+  title: Scheduled Tasks API
+  version: 1.0.0
+  description: API for managing scheduled tasks in SunnyAgent
+
+servers:
+  - url: /api
+    description: API base path
+
+paths:
+  /scheduled-tasks:
+    get:
+      summary: List scheduled tasks
+      operationId: listScheduledTasks
+      tags:
+        - Scheduled Tasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [scheduled, completed, all]
+          description: Filter by task status (default=scheduled)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: List of scheduled tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTaskList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+
+    post:
+      summary: Create a scheduled task
+      operationId: createScheduledTask
+      tags:
+        - Scheduled Tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduledTaskRequest'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTask'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a scheduled task
+      operationId: getScheduledTask
+      tags:
+        - Scheduled Tasks
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    patch:
+      summary: Update a scheduled task
+      operationId: updateScheduledTask
+      tags:
+        - Scheduled Tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScheduledTaskRequest'
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTask'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    delete:
+      summary: Delete a scheduled task
+      operationId: deleteScheduledTask
+      tags:
+        - Scheduled Tasks
+      responses:
+        '204':
+          description: Task deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}/enable:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Enable a scheduled task
+      operationId: enableScheduledTask
+      tags:
+        - Scheduled Tasks
+      responses:
+        '200':
+          description: Task enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}/disable:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Disable a scheduled task
+      operationId: disableScheduledTask
+      tags:
+        - Scheduled Tasks
+      responses:
+        '200':
+          description: Task disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}/run:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Run a scheduled task immediately
+      operationId: runScheduledTaskNow
+      tags:
+        - Scheduled Tasks
+      responses:
+        '202':
+          description: Task execution started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecution'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Task is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}/executions:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: List task executions
+      operationId: listTaskExecutions
+      tags:
+        - Task Executions
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: List of task executions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecutionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /scheduled-tasks/{task_id}/executions/{execution_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get execution details
+      operationId: getTaskExecution
+      tags:
+        - Task Executions
+      responses:
+        '200':
+          description: Execution details with log
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecutionDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /admin/scheduled-tasks:
+    get:
+      summary: List all scheduled tasks (admin)
+      operationId: adminListScheduledTasks
+      tags:
+        - Admin
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by user ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [scheduled, completed, all]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: List of all scheduled tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminScheduledTaskList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+
+  /admin/scheduled-tasks/settings:
+    get:
+      summary: Get scheduled tasks global settings
+      operationId: getScheduledTasksSettings
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: Global settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTasksSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+
+    patch:
+      summary: Update scheduled tasks global settings
+      operationId: updateScheduledTasksSettings
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScheduledTasksSettingsRequest'
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledTasksSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ScheduleType:
+      type: string
+      enum: [once, daily, weekly, monthly]
+
+    TaskStatus:
+      type: string
+      enum: [scheduled, completed, expired, error]
+
+    ExecutionStatus:
+      type: string
+      enum: [pending, running, success, failed, timeout]
+
+    OnceScheduleConfig:
+      type: object
+      required:
+        - run_date
+        - run_time
+      properties:
+        run_date:
+          type: string
+          format: date
+          example: "2024-12-25"
+        run_time:
+          type: string
+          pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+          example: "09:00"
+
+    DailyScheduleConfig:
+      type: object
+      required:
+        - time
+      properties:
+        time:
+          type: string
+          pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+          example: "09:00"
+
+    WeeklyScheduleConfig:
+      type: object
+      required:
+        - days_of_week
+        - time
+      properties:
+        days_of_week:
+          type: array
+          items:
+            type: string
+            enum: [mon, tue, wed, thu, fri, sat, sun]
+          minItems: 1
+          maxItems: 7
+          example: ["mon", "wed", "fri"]
+        time:
+          type: string
+          pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+          example: "09:00"
+
+    MonthlyScheduleConfig:
+      type: object
+      required:
+        - days_of_month
+        - time
+      properties:
+        days_of_month:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 31
+          minItems: 1
+          maxItems: 31
+          example: [1, 15]
+        time:
+          type: string
+          pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+          example: "09:00"
+
+    ScheduleConfig:
+      oneOf:
+        - $ref: '#/components/schemas/OnceScheduleConfig'
+        - $ref: '#/components/schemas/DailyScheduleConfig'
+        - $ref: '#/components/schemas/WeeklyScheduleConfig'
+        - $ref: '#/components/schemas/MonthlyScheduleConfig'
+
+    ScheduledTask:
+      type: object
+      required:
+        - id
+        - title
+        - schedule_type
+        - schedule_config
+        - enabled
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        schedule_type:
+          $ref: '#/components/schemas/ScheduleType'
+        schedule_config:
+          $ref: '#/components/schemas/ScheduleConfig'
+        expiry_date:
+          type: string
+          format: date-time
+          nullable: true
+        enabled:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        next_run_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: Next scheduled execution time
+        last_run_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last execution time
+        last_run_status:
+          $ref: '#/components/schemas/ExecutionStatus'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScheduledTaskWithScript:
+      allOf:
+        - $ref: '#/components/schemas/ScheduledTask'
+        - type: object
+          properties:
+            script_content:
+              type: string
+              description: Script/prompt content
+
+    ScheduledTaskList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduledTask'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    AdminScheduledTaskList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/ScheduledTask'
+              - type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  username:
+                    type: string
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    CreateScheduledTaskRequest:
+      type: object
+      required:
+        - title
+        - script_content
+        - schedule_type
+        - schedule_config
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        script_content:
+          type: string
+          minLength: 1
+          maxLength: 65536
+          description: Prompt/script content (max 64KB)
+        schedule_type:
+          $ref: '#/components/schemas/ScheduleType'
+        schedule_config:
+          $ref: '#/components/schemas/ScheduleConfig'
+        expiry_date:
+          type: string
+          format: date-time
+          nullable: true
+
+    UpdateScheduledTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        script_content:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        schedule_type:
+          $ref: '#/components/schemas/ScheduleType'
+        schedule_config:
+          $ref: '#/components/schemas/ScheduleConfig'
+        expiry_date:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskExecution:
+      type: object
+      required:
+        - id
+        - task_id
+        - execution_time
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        execution_time:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/ExecutionStatus'
+        duration_ms:
+          type: integer
+          nullable: true
+        retry_count:
+          type: integer
+          default: 0
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TaskExecutionDetail:
+      allOf:
+        - $ref: '#/components/schemas/TaskExecution'
+        - type: object
+          properties:
+            log_content:
+              type: string
+              nullable: true
+              description: Execution log content
+            conversation_id:
+              type: string
+              format: uuid
+              nullable: true
+              description: Associated conversation ID
+
+    TaskExecutionList:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskExecution'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    ScheduledTasksSettings:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+          description: Global enable/disable for scheduled tasks feature
+
+    UpdateScheduledTasksSettingsRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    loc:
+                      type: array
+                      items:
+                        type: string
+                    msg:
+                      type: string
+                    type:
+                      type: string

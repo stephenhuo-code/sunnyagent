@@ -34,6 +34,7 @@ from backend.aime.context_manager import ContextManager, CONTEXT_CLEANUP_INTERVA
 from backend.api import register_routers
 from backend.services.langfuse_service import get_langfuse_service, reset_langfuse_service
 from backend.checkpointer_store import set_checkpointer, clear_checkpointer, build_history_graph, set_history_graph
+from backend.scheduled_tasks.scheduler import init_scheduler, start_scheduler, stop_scheduler
 
 # Global state
 _history_graph = None
@@ -41,6 +42,7 @@ _checkpointer = None
 _context_manager = None
 _cleanup_task = None
 _langfuse_service = None
+_scheduler = None
 
 
 def _sync_cleanup():
@@ -82,7 +84,7 @@ async def _context_cleanup_task(context_manager: ContextManager):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage history graph and checkpointer lifecycle."""
-    global _history_graph, _checkpointer, _context_manager, _cleanup_task, _langfuse_service
+    global _history_graph, _checkpointer, _context_manager, _cleanup_task, _langfuse_service, _scheduler
 
     # Validate LLM configuration early (fail fast)
     try:
@@ -140,6 +142,14 @@ async def lifespan(app: FastAPI):
             f"Context cleanup task started (interval: {CONTEXT_CLEANUP_INTERVAL}s)"
         )
 
+        # Initialize APScheduler for scheduled tasks
+        try:
+            _scheduler = await init_scheduler(database_url)
+            await start_scheduler()
+            logger.info("APScheduler started for scheduled tasks")
+        except Exception as e:
+            logger.warning(f"APScheduler initialization failed: {e}")
+
     # Initialize checkpointer based on environment
     if database_url:
         # Use PostgreSQL for production
@@ -185,6 +195,15 @@ async def lifespan(app: FastAPI):
 
             # Clear shared checkpointer and history graph
             clear_checkpointer()
+
+    # Cleanup APScheduler
+    if _scheduler:
+        try:
+            await stop_scheduler()
+            logger.info("APScheduler stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping APScheduler: {e}")
+        _scheduler = None
 
     # Cleanup
     if _cleanup_task:

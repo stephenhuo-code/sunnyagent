@@ -39,6 +39,14 @@ export interface ThinkingStep {
 /** Display scenario type for three-layer structure */
 export type DisplayScenario = "quick" | "agent" | "planning";
 
+/** Schedule task creation data from chat */
+export interface ScheduleTaskCreateData {
+  schedule_type: "once" | "daily" | "weekly" | "monthly";
+  schedule_config: Record<string, unknown>;
+  prompt: string;
+  title: string;
+}
+
 /** SSE event types from the backend */
 export type SSEEvent =
   | { event: "text_delta"; data: { text: string } }
@@ -57,7 +65,8 @@ export type SSEEvent =
   | { event: "task_spawned"; data: { task_id: string; subagent_type: string; description: string; status?: "pending" | "running" } }
   | { event: "task_started"; data: { task_id: string } }
   | { event: "task_completed"; data: { task_id: string; duration_ms?: number; status: "success" | "error" | "failed" | "cancelled" } }
-  | { event: "task_output"; data: { task_id: string; text: string } };
+  | { event: "task_output"; data: { task_id: string; text: string } }
+  | { event: "schedule_task_create"; data: ScheduleTaskCreateData };
 
 /** A tool call with its current status */
 export interface ToolCall {

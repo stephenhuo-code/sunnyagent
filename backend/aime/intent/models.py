@@ -10,13 +10,14 @@ from typing import Literal
 # Type Definitions
 # =============================================================================
 
-Action = Literal["direct_reply", "delegate", "plan", "clarify"]
+Action = Literal["direct_reply", "delegate", "plan", "clarify", "schedule_task"]
 """
 Action types that determine Planner behavior:
 - direct_reply: Simple question, respond directly without tools
 - delegate: Single task, route to specialist agent
 - plan: Complex task, decompose into multiple subtasks
 - clarify: Unclear intent, ask user for clarification
+- schedule_task: Create scheduled task from natural language intent
 """
 
 

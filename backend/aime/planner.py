@@ -220,6 +220,14 @@ class AIMEPlanner:
                     event_id += 1
                     yield event
 
+            elif intent.action == "schedule_task":
+                # Scheduled task creation from chat
+                async for event in self._handle_schedule_task(
+                    message, thread_id, intent, event_id
+                ):
+                    event_id += 1
+                    yield event
+
             else:
                 # Fallback to direct reply for unknown actions
                 logger.warning(f"Unknown action: {intent.action}, falling back to direct_reply")
@@ -427,6 +435,101 @@ class AIMEPlanner:
             response += f"{i}. {q}\n"
 
         yield _format_sse("text_delta", {"text": response}, event_id)
+
+    async def _handle_schedule_task(
+        self,
+        message: str,
+        thread_id: str,
+        intent: IntentResult,
+        start_event_id: int,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Handle schedule_task action - create scheduled task from chat.
+
+        Parses the user message for schedule intent and emits an SSE event
+        to trigger the frontend TaskForm modal.
+
+        Args:
+            message: User message with schedule intent
+            thread_id: Thread ID
+            intent: Analyzed intent
+            start_event_id: Starting event ID
+
+        Yields:
+            SSE events (schedule_task_create for frontend modal)
+        """
+        from backend.scheduled_tasks.intent_parser import parse_schedule_intent
+
+        logger.info("[_handle_schedule_task] Processing schedule task creation from chat")
+        event_id = start_event_id
+
+        # Parse the schedule intent
+        parsed = parse_schedule_intent(message)
+
+        if parsed is None:
+            # Parsing failed - emit error and fall back to text response
+            yield _format_sse(
+                "text_delta",
+                {"text": "抱歉，我无法解析您的定时任务请求。请尝试更明确的格式，例如：\n\n- 每天早上9点执行：分析今日新闻\n- 每周一下午3点提醒我开会\n- 明天上午10点发送报告"},
+                event_id,
+            )
+            return
+
+        # Emit schedule_task_create event for frontend to open TaskForm modal
+        yield _format_sse(
+            "schedule_task_create",
+            {
+                "schedule_type": parsed.schedule_type.value,
+                "schedule_config": parsed.schedule_config,
+                "prompt": parsed.prompt,
+                "title": parsed.title or parsed.prompt[:50],
+            },
+            event_id,
+        )
+        event_id += 1
+
+        # Emit confirmation message
+        schedule_desc = self._format_schedule_description(
+            parsed.schedule_type.value,
+            parsed.schedule_config,
+        )
+        yield _format_sse(
+            "text_delta",
+            {"text": f"我已识别到您的定时任务请求：\n\n**任务内容**: {parsed.prompt}\n**执行时间**: {schedule_desc}\n\n请在弹出的对话框中确认或修改任务详情。"},
+            event_id,
+        )
+
+    def _format_schedule_description(
+        self,
+        schedule_type: str,
+        schedule_config: dict,
+    ) -> str:
+        """Format schedule configuration into human-readable description."""
+        if schedule_type == "once":
+            run_date = schedule_config.get("run_date", "")
+            run_time = schedule_config.get("run_time", "")
+            return f"{run_date} {run_time}"
+
+        elif schedule_type == "daily":
+            time = schedule_config.get("time", "09:00")
+            return f"每天 {time}"
+
+        elif schedule_type == "weekly":
+            days = schedule_config.get("days_of_week", [])
+            time = schedule_config.get("time", "09:00")
+            day_names = {
+                "mon": "周一", "tue": "周二", "wed": "周三",
+                "thu": "周四", "fri": "周五", "sat": "周六", "sun": "周日",
+            }
+            day_str = "、".join(day_names.get(d, d) for d in days)
+            return f"每周 {day_str} {time}"
+
+        elif schedule_type == "monthly":
+            days = schedule_config.get("days_of_month", [])
+            time = schedule_config.get("time", "09:00")
+            day_str = "、".join(f"{d}号" for d in days)
+            return f"每月 {day_str} {time}"
+
+        return str(schedule_config)
 
     async def _handle_delegate(
         self,
