@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugin Management - SunnyAgent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#0F172A',
+            secondary: '#1E293B',
+            cta: '#22C55E',
+            background: '#020617',
+            surface: '#0F172A',
+            border: '#334155',
+            text: '#F8FAFC',
+            muted: '#94A3B8',
+          },
+          fontFamily: {
+            sans: ['Fira Sans', 'sans-serif'],
+            mono: ['Fira Code', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Fira Sans', sans-serif; }
+    .font-mono { font-family: 'Fira Code', monospace; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0F172A; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* Transitions */
+    .sidebar-item { transition: all 0.2s ease; }
+    .sidebar-item:hover { background: rgba(51, 65, 85, 0.5); }
+    .sidebar-item.active { background: rgba(34, 197, 94, 0.1); border-left: 2px solid #22C55E; }
+
+    /* Tag styles */
+    .tag { transition: all 0.15s ease; }
+    .tag:hover { transform: translateY(-1px); }
+
+    /* Toggle switch */
+    .toggle-switch { transition: background-color 0.2s ease; }
+    .toggle-switch.active { background-color: #22C55E; }
+    .toggle-switch .toggle-dot { transition: transform 0.2s ease; }
+    .toggle-switch.active .toggle-dot { transform: translateX(20px); }
+
+    /* Modal */
+    .modal { transition: opacity 0.2s ease, visibility 0.2s ease; }
+    .modal.hidden { opacity: 0; visibility: hidden; }
+    .modal-content { transition: transform 0.2s ease; }
+    .modal.hidden .modal-content { transform: scale(0.95); }
+
+    /* Star rating */
+    .star { transition: color 0.15s ease; }
+    .star:hover, .star.active { color: #FBBF24; }
+  </style>
+</head>
+<body class="bg-background text-text min-h-screen">
+
+  <!-- Main Layout -->
+  <div class="flex h-screen">
+
+    <!-- Left Sidebar -->
+    <aside class="w-72 bg-surface border-r border-border flex flex-col">
+
+      <!-- Sidebar Header -->
+      <div class="p-4 border-b border-border flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Personal plugins</h2>
+        <div class="relative">
+          <button id="addPluginBtn" class="w-8 h-8 rounded-lg bg-secondary hover:bg-border flex items-center justify-center cursor-pointer transition-colors">
+            <i class="fas fa-plus text-sm"></i>
+          </button>
+          <!-- Dropdown Menu -->
+          <div id="addPluginMenu" class="hidden absolute right-0 top-10 w-48 bg-secondary rounded-lg border border-border shadow-xl z-50">
+            <button onclick="openBrowseModal()" class="w-full px-4 py-3 text-left hover:bg-border/50 flex items-center gap-3 cursor-pointer rounded-t-lg transition-colors">
+              <i class="fas fa-compass text-muted"></i>
+              <span>Browse plugins</span>
+            </button>
+            <button onclick="openUploadModal()" class="w-full px-4 py-3 text-left hover:bg-border/50 flex items-center gap-3 cursor-pointer rounded-b-lg transition-colors">
+              <i class="fas fa-upload text-muted"></i>
+              <span>Upload plugin</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plugin List -->
+      <div class="flex-1 overflow-y-auto p-2">
+
+        <!-- Plugin Item - Active -->
+        <div class="sidebar-item active rounded-lg mb-1 cursor-pointer" onclick="selectPlugin('data')">
+          <div class="p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-cta/20 flex items-center justify-center">
+              <i class="fas fa-database text-cta text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate">Data</div>
+            </div>
+          </div>
+          <!-- Sub Navigation -->
+          <div class="pl-14 pb-2 space-y-1">
+            <div class="text-sm text-muted hover:text-text cursor-pointer py-1 transition-colors">
+              <i class="fas fa-terminal mr-2 text-xs"></i>Commands
+            </div>
+            <div class="text-sm text-muted hover:text-text cursor-pointer py-1 transition-colors">
+              <i class="fas fa-plug mr-2 text-xs"></i>Connectors
+            </div>
+            <div class="text-sm text-cta cursor-pointer py-1">
+              <i class="fas fa-bolt mr-2 text-xs"></i>Skills
+            </div>
+          </div>
+        </div>
+
+        <!-- Plugin Item - Disabled -->
+        <div class="sidebar-item rounded-lg mb-1 cursor-pointer" onclick="selectPlugin('research')">
+          <div class="p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <i class="fas fa-search text-blue-400 text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate">Research</div>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-border text-muted">Disabled</span>
+          </div>
+        </div>
+
+        <!-- Plugin Item - Shared -->
+        <div class="sidebar-item rounded-lg mb-1 cursor-pointer" onclick="selectPlugin('code-review')">
+          <div class="p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+              <i class="fas fa-code text-purple-400 text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate">Code Review</div>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-cta/20 text-cta">Shared</span>
+          </div>
+        </div>
+
+        <!-- Plugin Item - Uploaded -->
+        <div class="sidebar-item rounded-lg mb-1 cursor-pointer" onclick="selectPlugin('my-plugin')">
+          <div class="p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+              <i class="fas fa-cube text-orange-400 text-sm"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate">My Custom Plugin</div>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400">Uploaded</span>
+          </div>
+        </div>
+
+        <!-- General Skills Group -->
+        <div class="mt-4 pt-4 border-t border-border">
+          <div class="px-3 py-2 text-xs font-semibold text-muted uppercase tracking-wider">General Skills</div>
+          <div class="sidebar-item rounded-lg mb-1 cursor-pointer" onclick="selectPlugin('general')">
+            <div class="p-3 flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-slate-500/20 flex items-center justify-center">
+                <i class="fas fa-layer-group text-slate-400 text-sm"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium truncate">General</div>
+                <div class="text-xs text-muted">12 skills</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Right Panel - Plugin Details -->
+    <main class="flex-1 overflow-y-auto">
+
+      <!-- Detail Header -->
+      <div class="sticky top-0 bg-background/95 backdrop-blur border-b border-border z-40">
+        <div class="p-6 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-cta/20 flex items-center justify-center">
+              <i class="fas fa-database text-cta text-xl"></i>
+            </div>
+            <div>
+              <h1 class="text-2xl font-bold">Data</h1>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-xs px-2 py-0.5 rounded bg-cta/20 text-cta">preset:data</span>
+                <div class="flex items-center gap-1 text-yellow-400">
+                  <i class="fas fa-star text-xs"></i>
+                  <span class="text-sm">4.8</span>
+                  <span class="text-muted text-xs">(124)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 rounded-lg bg-secondary hover:bg-border text-sm font-medium cursor-pointer transition-colors">
+              <i class="fas fa-cog mr-2"></i>Customize
+            </button>
+            <!-- Toggle Switch -->
+            <div class="toggle-switch active w-12 h-7 rounded-full bg-border cursor-pointer relative" onclick="togglePlugin(this)">
+              <div class="toggle-dot absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail Content -->
+      <div class="p-6 space-y-8">
+
+        <!-- Metadata -->
+        <div class="grid grid-cols-3 gap-6">
+          <div>
+            <div class="text-xs text-muted uppercase tracking-wider mb-1">Source</div>
+            <div class="font-medium">Preset</div>
+          </div>
+          <div>
+            <div class="text-xs text-muted uppercase tracking-wider mb-1">Version</div>
+            <div class="font-medium font-mono">1.0.0</div>
+          </div>
+          <div>
+            <div class="text-xs text-muted uppercase tracking-wider mb-1">Author</div>
+            <div class="font-medium">SunnyAgent</div>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Description</h3>
+          <p class="text-text/80 leading-relaxed">
+            Write SQL, explore datasets, and generate insights faster. Build visualizations and dashboards, and turn raw data into clear stories for stakeholders.
+          </p>
+        </div>
+
+        <!-- Ask questions like -->
+        <div>
+          <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Ask questions like...</h3>
+          <div class="space-y-2">
+            <div class="p-3 rounded-lg bg-secondary hover:bg-border cursor-pointer transition-colors flex items-center justify-between group">
+              <span>Explore and profile a dataset</span>
+              <i class="fas fa-chevron-right text-muted group-hover:text-text transition-colors"></i>
+            </div>
+            <div class="p-3 rounded-lg bg-secondary hover:bg-border cursor-pointer transition-colors flex items-center justify-between group">
+              <span>Build an interactive dashboard from my data</span>
+              <i class="fas fa-chevron-right text-muted group-hover:text-text transition-colors"></i>
+            </div>
+            <div class="p-3 rounded-lg bg-secondary hover:bg-border cursor-pointer transition-colors flex items-center justify-between group">
+              <span>Write an optimized SQL query</span>
+              <i class="fas fa-chevron-right text-muted group-hover:text-text transition-colors"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Commands -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-sm font-semibold text-muted uppercase tracking-wider">Commands</h3>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-border text-muted">6</span>
+          </div>
+          <p class="text-sm text-muted mb-4">Use these shortcuts by typing / in the chat window to trigger a workflow on demand.</p>
+          <div class="flex flex-wrap gap-2">
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/analyze</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/build-dashboard</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/create-viz</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/explore-data</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/validate</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-secondary hover:bg-border text-sm font-mono cursor-pointer">/write-query</span>
+          </div>
+        </div>
+
+        <!-- Skills -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-sm font-semibold text-muted uppercase tracking-wider">Skills</h3>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-border text-muted">7</span>
+          </div>
+          <p class="text-sm text-muted mb-4">Teach Claude your team norms and domain expertise to automatically inform relevant tasks.</p>
+          <div class="flex flex-wrap gap-2">
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">data-context-extractor</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">data-exploration</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">data-validation</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">data-visualization</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-sm cursor-pointer border border-purple-500/20">
+              <i class="fas fa-layer-group mr-1 text-xs"></i>interactive-dashboard-builder
+              <span class="ml-1 text-xs opacity-70">(workflow)</span>
+            </span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">sql-queries</span>
+            <span class="tag px-3 py-1.5 rounded-lg bg-cta/10 text-cta text-sm cursor-pointer border border-cta/20">statistical-analysis</span>
+          </div>
+        </div>
+
+        <!-- Rating Section -->
+        <div class="pt-6 border-t border-border">
+          <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Rate this plugin</h3>
+          <div class="flex items-center gap-4">
+            <div class="flex gap-1">
+              <i class="star fas fa-star text-2xl text-muted cursor-pointer" data-rating="1"></i>
+              <i class="star fas fa-star text-2xl text-muted cursor-pointer" data-rating="2"></i>
+              <i class="star fas fa-star text-2xl text-muted cursor-pointer" data-rating="3"></i>
+              <i class="star fas fa-star text-2xl text-muted cursor-pointer" data-rating="4"></i>
+              <i class="star fas fa-star text-2xl text-muted cursor-pointer" data-rating="5"></i>
+            </div>
+            <span class="text-sm text-muted">Click to rate</span>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Browse Plugins Modal -->
+  <div id="browseModal" class="modal hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="modal-content bg-surface rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl">
+
+      <!-- Modal Header -->
+      <div class="p-6 border-b border-border">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-2xl font-bold">Browse plugins</h2>
+          <button onclick="closeBrowseModal()" class="w-8 h-8 rounded-lg hover:bg-border flex items-center justify-center cursor-pointer transition-colors">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <p class="text-muted">Extend how Claude performs tasks with ready-to-use workflows from Plugins. Customize plugins to connect to the tools, data, and best practices that are unique to your company.</p>
+
+        <!-- Tabs & Search -->
+        <div class="flex items-center justify-between mt-6">
+          <div class="flex gap-1 bg-secondary rounded-lg p-1">
+            <button class="tab-btn active px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors" data-tab="preset">Preset</button>
+            <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-muted hover:text-text cursor-pointer transition-colors" data-tab="package">Package</button>
+            <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-muted hover:text-text cursor-pointer transition-colors" data-tab="shared">Shared</button>
+            <button class="tab-btn px-4 py-2 rounded-md text-sm font-medium text-muted hover:text-text cursor-pointer transition-colors" data-tab="uploaded">Uploaded</button>
+          </div>
+          <div class="relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-muted"></i>
+            <input type="text" placeholder="Search" class="pl-10 pr-4 py-2 rounded-lg bg-secondary border border-border focus:border-cta focus:outline-none w-64 transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Content -->
+      <div class="p-6 overflow-y-auto max-h-[calc(85vh-200px)]">
+        <div class="grid grid-cols-3 gap-4">
+
+          <!-- Plugin Card - Installed -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-cta/20 flex items-center justify-center">
+                <i class="fas fa-headset text-cta text-xl"></i>
+              </div>
+              <button class="px-3 py-1.5 rounded-lg bg-cta/20 text-cta text-sm font-medium cursor-pointer hover:bg-cta/30 transition-colors">
+                Manage
+              </button>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Customer support</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Triage tickets, draft responses, escalate issues, and build your knowledge base. Research customer context and turn...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.6</span>
+              <span class="text-muted text-xs">(89)</span>
+            </div>
+          </div>
+
+          <!-- Plugin Card - Installed -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-cta/20 flex items-center justify-center">
+                <i class="fas fa-database text-cta text-xl"></i>
+              </div>
+              <button class="px-3 py-1.5 rounded-lg bg-cta/20 text-cta text-sm font-medium cursor-pointer hover:bg-cta/30 transition-colors">
+                Manage
+              </button>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Data</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Write SQL, explore datasets, and generate insights faster. Build visualizations and dashboards, and turn raw data into clear...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.8</span>
+              <span class="text-muted text-xs">(124)</span>
+            </div>
+          </div>
+
+          <!-- Plugin Card - Not Installed -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                <i class="fas fa-flask text-blue-400 text-xl"></i>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Bio research</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Connect to preclinical research tools and databases (literature search, genomics analysis, target prioritization) to...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.5</span>
+              <span class="text-muted text-xs">(67)</span>
+            </div>
+          </div>
+
+          <!-- Plugin Card -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+                <i class="fas fa-search text-indigo-400 text-xl"></i>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Enterprise search</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Search across all of your company's tools in one place. Find anything across email, chat, documents, and wikis without...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.7</span>
+              <span class="text-muted text-xs">(156)</span>
+            </div>
+          </div>
+
+          <!-- Plugin Card -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                <i class="fas fa-chart-line text-emerald-400 text-xl"></i>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Finance</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Streamline finance and accounting workflows, from journal entries and reconciliation to financial statements and...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.4</span>
+              <span class="text-muted text-xs">(98)</span>
+            </div>
+          </div>
+
+          <!-- Plugin Card -->
+          <div class="bg-secondary rounded-xl p-5 hover:bg-border/50 cursor-pointer transition-colors group">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                <i class="fas fa-gavel text-amber-400 text-xl"></i>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Legal</h3>
+              <span class="text-xs text-muted font-mono">v1.0.0</span>
+            </div>
+            <p class="text-sm text-muted line-clamp-2">Speed up contract review, NDA triage, and compliance workflows for in-house legal teams. Draft legal briefs, organize...</p>
+            <div class="flex items-center gap-1 mt-3 text-yellow-400">
+              <i class="fas fa-star text-xs"></i>
+              <span class="text-sm">4.3</span>
+              <span class="text-muted text-xs">(45)</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Plugin Modal -->
+  <div id="uploadModal" class="modal hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="modal-content bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+
+      <!-- Modal Header -->
+      <div class="p-6 border-b border-border">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold">Upload plugin</h2>
+          <button onclick="closeUploadModal()" class="w-8 h-8 rounded-lg hover:bg-border flex items-center justify-center cursor-pointer transition-colors">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Content -->
+      <div class="p-6">
+        <!-- Upload Zone -->
+        <div class="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-cta/50 transition-colors cursor-pointer" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" class="hidden" accept=".zip">
+          <div class="w-16 h-16 rounded-full bg-cta/10 flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-cloud-upload-alt text-cta text-2xl"></i>
+          </div>
+          <p class="font-medium mb-2">Click to upload or drag and drop</p>
+          <p class="text-sm text-muted">ZIP file containing AGENTS.md or SKILL.md</p>
+          <p class="text-xs text-muted mt-2">Max file size: 10MB</p>
+        </div>
+
+        <!-- Requirements -->
+        <div class="mt-6 p-4 rounded-lg bg-secondary">
+          <h4 class="font-medium mb-2 flex items-center gap-2">
+            <i class="fas fa-info-circle text-cta"></i>
+            Package requirements
+          </h4>
+          <ul class="text-sm text-muted space-y-1">
+            <li>• Must contain AGENTS.md (for agent plugin) or SKILL.md (for skill)</li>
+            <li>• Optional: skills/ directory for agent plugins</li>
+            <li>• YAML frontmatter with name, description, version</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-6 border-t border-border flex justify-end gap-3">
+        <button onclick="closeUploadModal()" class="px-4 py-2 rounded-lg bg-secondary hover:bg-border text-sm font-medium cursor-pointer transition-colors">
+          Cancel
+        </button>
+        <button class="px-4 py-2 rounded-lg bg-cta hover:bg-cta/80 text-white text-sm font-medium cursor-pointer transition-colors">
+          Upload
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Confirmation Modal -->
+  <div id="shareModal" class="modal hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="modal-content bg-surface rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+      <div class="p-6">
+        <div class="w-16 h-16 rounded-full bg-cta/10 flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-share-alt text-cta text-2xl"></i>
+        </div>
+        <h2 class="text-xl font-bold text-center mb-2">Share this plugin?</h2>
+        <p class="text-muted text-center mb-6">Once shared, this plugin will be visible to all users in the plugin marketplace. You can unshare it anytime.</p>
+        <div class="flex gap-3">
+          <button onclick="closeShareModal()" class="flex-1 px-4 py-2 rounded-lg bg-secondary hover:bg-border text-sm font-medium cursor-pointer transition-colors">
+            Cancel
+          </button>
+          <button onclick="confirmShare()" class="flex-1 px-4 py-2 rounded-lg bg-cta hover:bg-cta/80 text-white text-sm font-medium cursor-pointer transition-colors">
+            Share
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Add Plugin Menu Toggle
+    const addPluginBtn = document.getElementById('addPluginBtn');
+    const addPluginMenu = document.getElementById('addPluginMenu');
+
+    addPluginBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addPluginMenu.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      addPluginMenu.classList.add('hidden');
+    });
+
+    // Modal Functions
+    function openBrowseModal() {
+      document.getElementById('browseModal').classList.remove('hidden');
+      addPluginMenu.classList.add('hidden');
+    }
+
+    function closeBrowseModal() {
+      document.getElementById('browseModal').classList.add('hidden');
+    }
+
+    function openUploadModal() {
+      document.getElementById('uploadModal').classList.remove('hidden');
+      addPluginMenu.classList.add('hidden');
+    }
+
+    function closeUploadModal() {
+      document.getElementById('uploadModal').classList.add('hidden');
+    }
+
+    function openShareModal() {
+      document.getElementById('shareModal').classList.remove('hidden');
+    }
+
+    function closeShareModal() {
+      document.getElementById('shareModal').classList.add('hidden');
+    }
+
+    function confirmShare() {
+      closeShareModal();
+      // Show success feedback
+      alert('Plugin shared successfully!');
+    }
+
+    // Toggle Plugin
+    function togglePlugin(el) {
+      el.classList.toggle('active');
+    }
+
+    // Select Plugin (placeholder)
+    function selectPlugin(id) {
+      console.log('Selected plugin:', id);
+    }
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.remove('active', 'bg-cta/20', 'text-cta');
+          b.classList.add('text-muted');
+        });
+        btn.classList.add('active', 'bg-cta/20', 'text-cta');
+        btn.classList.remove('text-muted');
+      });
+    });
+
+    // Star Rating
+    document.querySelectorAll('.star').forEach(star => {
+      star.addEventListener('click', function() {
+        const rating = this.dataset.rating;
+        document.querySelectorAll('.star').forEach((s, i) => {
+          if (i < rating) {
+            s.classList.add('active');
+          } else {
+            s.classList.remove('active');
+          }
+        });
+      });
+
+      star.addEventListener('mouseenter', function() {
+        const rating = this.dataset.rating;
+        document.querySelectorAll('.star').forEach((s, i) => {
+          if (i < rating) {
+            s.style.color = '#FBBF24';
+          }
+        });
+      });
+
+      star.addEventListener('mouseleave', function() {
+        document.querySelectorAll('.star').forEach(s => {
+          if (!s.classList.contains('active')) {
+            s.style.color = '';
+          }
+        });
+      });
+    });
+
+    // Close modals on escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeBrowseModal();
+        closeUploadModal();
+        closeShareModal();
+      }
+    });
+
+    // Close modals on backdrop click
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.classList.add('hidden');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

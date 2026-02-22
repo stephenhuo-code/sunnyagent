@@ -47,6 +47,7 @@ class SkillEntry:
     description: str  # Trigger condition description (from SKILL.md YAML)
     path: Path  # Directory containing SKILL.md
     skill_type: SkillType = "atomic"  # AIME extension
+    source: str = "custom"  # Origin: "preset", "custom", "package:{agent}", "uploaded:{user_id}", "shared"
     _instructions: str | None = field(default=None, repr=False)
 
     def load_instructions(self) -> str:

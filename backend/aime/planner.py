@@ -105,12 +105,15 @@ class AIMEPlanner:
 
         Args:
             intent_analyzer: Optional custom intent analyzer
-            actor_factory: Optional custom actor factory
+            actor_factory: Optional custom actor factory (user_id set per-request)
             progress_manager: Optional custom progress manager
             context_manager: Optional custom context manager
         """
         self.intent_analyzer = intent_analyzer or IntentAnalyzer()
-        self.actor_factory = actor_factory or ActorFactory()
+        self._actor_factory_base = actor_factory  # Store base factory if provided
+        # ActorFactory is created per-request with user_id in process()
+        # Initialize with a default factory (no user filtering)
+        self.actor_factory: ActorFactory = actor_factory or ActorFactory()
         self.progress_manager = progress_manager or ProgressManager()
         self.context_manager = context_manager or ContextManager()
         self._model = get_model("supervisor")
@@ -147,6 +150,13 @@ class AIMEPlanner:
         else:
             self._current_user_id = None
             self._current_context = None
+
+        # Create ActorFactory with current user_id for plugin filtering
+        if self._actor_factory_base:
+            # If a base factory was provided, create new one with user_id
+            self.actor_factory = ActorFactory(user_id=self._current_user_id)
+        else:
+            self.actor_factory = ActorFactory(user_id=self._current_user_id)
 
         # Log entry point
         logger.info(
@@ -463,8 +473,8 @@ class AIMEPlanner:
         )
 
         try:
-            # Select actor using ActorFactory
-            actor = self.actor_factory.select_actor(spec)
+            # Select actor using ActorFactory (async for plugin filtering)
+            actor = await self.actor_factory.select_actor(spec)
             logger.info(f"[_handle_delegate] Actor selected: {actor.name}")
 
             # Emit thinking event (routing decision)
@@ -807,7 +817,7 @@ class AIMEPlanner:
             for spec in subtasks:
                 self.progress_manager.add_task(spec)
                 try:
-                    actor = self.actor_factory.select_actor(spec)
+                    actor = await self.actor_factory.select_actor(spec)
                     task_actors[spec.id] = actor
                 except ValueError as e:
                     logger.error(f"Failed to select actor for {spec.id}: {e}")
@@ -1016,7 +1026,7 @@ class AIMEPlanner:
                                     for new_spec in new_specs:
                                         self.progress_manager.add_task(new_spec)
                                         try:
-                                            new_actor = self.actor_factory.select_actor(
+                                            new_actor = await self.actor_factory.select_actor(
                                                 new_spec
                                             )
                                             task_actors[new_spec.id] = new_actor

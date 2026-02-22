@@ -9,10 +9,11 @@ import { ConversationList } from "./components/Conversations";
 import { AdminPanel } from "./components/Admin";
 import ChatContainer from "./components/ChatContainer";
 import { ProjectList, ProjectHome, ProjectWorkspace } from "./components/Projects";
+import { PluginsPage } from "./pages/PluginsPage";
 import { Loader2, X } from "lucide-react";
 import { getConversation } from "./api/conversations";
 
-type View = "chat" | "project";
+type View = "chat" | "project" | "plugins";
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -253,6 +254,11 @@ function AppContent() {
     setCreateProjectTrigger(prev => prev + 1);
   }, []);
 
+  // Handle showing plugins page
+  const handleShowPlugins = useCallback(() => {
+    setCurrentView("plugins");
+  }, []);
+
   if (isLoading) {
     return (
       <div className="loading-screen">
@@ -313,6 +319,7 @@ function AppContent() {
       <MainLayout
         onNewConversation={handleNewConversation}
         onShowAdmin={handleShowAdmin}
+        onShowPlugins={handleShowPlugins}
         conversationList={renderConversationList}
         projectsSection={renderProjectsList}
         conversations={conversations.historyConversations}
@@ -332,6 +339,7 @@ function AppContent() {
         {currentView === "chat" && (
           <ChatContainer key={chatKey} initialThreadId={currentThreadId} />
         )}
+        {currentView === "plugins" && <PluginsPage />}
         {currentView === "project" && currentProject && (
           showProjectHome ? (
             <ProjectHome

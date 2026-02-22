@@ -14,6 +14,7 @@ interface MainLayoutProps {
   projectsSection?: ReactNode | ((collapsed: boolean) => ReactNode);
   onNewConversation: () => void;
   onShowAdmin?: () => void;
+  onShowPlugins?: () => void;
   // Props for conversation popover
   conversations?: ConversationSummary[];
   conversationsLoading?: boolean;
@@ -37,6 +38,7 @@ export function MainLayout({
   projectsSection,
   onNewConversation,
   onShowAdmin,
+  onShowPlugins,
   conversations,
   conversationsLoading,
   conversationsError,
@@ -56,6 +58,7 @@ export function MainLayout({
       <Sidebar
         onNewConversation={onNewConversation}
         onAdminClick={onShowAdmin}
+        onPluginsClick={onShowPlugins}
         conversations={conversations}
         conversationsLoading={conversationsLoading}
         conversationsError={conversationsError}

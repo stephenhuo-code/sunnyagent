@@ -357,6 +357,9 @@ export default function InputBar({ onSend, onCancel, isStreaming, agents, skills
                 onMouseEnter={() => setSelectedSkillIndex(index)}
               >
                 <span className="skill-name">/{skill.name}</span>
+                {skill.skill_type === "workflow" && (
+                  <span className="skill-type-badge">workflow</span>
+                )}
                 <span className="skill-description">{skill.description}</span>
               </div>
             ))}

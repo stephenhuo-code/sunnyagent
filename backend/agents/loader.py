@@ -35,6 +35,7 @@ from deepagents.backends.filesystem import FilesystemBackend
 from backend.llm import get_model
 from backend.registry import register_agent
 from backend.checkpointer_store import get_checkpointer
+from backend.skills.loader import load_skills_from_directory
 
 logger = logging.getLogger(__name__)
 
@@ -120,12 +121,13 @@ def _register_package(pkg_dir: Path) -> None:
     # Set up FilesystemBackend scoped to package directory
     backend = FilesystemBackend(root_dir=pkg_dir, virtual_mode=True)
 
-    # Determine skills sources (if skills/ directory exists)
-    skills = None
+    # Register package skills to global SKILL_REGISTRY (replaces deepagents SkillsMiddleware)
     skills_dir = pkg_dir / "skills"
     if skills_dir.is_dir():
-        skills = ["/skills/"]
+        skill_count = load_skills_from_directory(skills_dir, source=f"package:{agent_name}")
+        logger.info(f"Registered {skill_count} skills from package '{agent_name}' to SKILL_REGISTRY")
 
+    # Don't pass skills to create_deep_agent - we use global SKILL_REGISTRY instead
     # Memory: always load AGENTS.md
     memory = ["/AGENTS.md"]
 
@@ -135,7 +137,7 @@ def _register_package(pkg_dir: Path) -> None:
     agent = create_deep_agent(
         model=model,
         backend=backend,
-        skills=skills,
+        skills=None,  # Use global SKILL_REGISTRY instead of deepagents SkillsMiddleware
         memory=memory,
         name=agent_name,
         checkpointer=get_checkpointer(),
@@ -150,11 +152,8 @@ def _register_package(pkg_dir: Path) -> None:
         source="package",
     )
 
-    skill_count = len(list(skills_dir.iterdir())) if skills_dir.is_dir() else 0
     cap_info = f", capabilities={capabilities}" if capabilities else ""
-    logger.info(
-        "Registered package agent '%s' (%d skills%s)", agent_name, skill_count, cap_info
-    )
+    logger.info("Registered package agent '%s'%s", agent_name, cap_info)
 
 
 def _extract_description(agents_md: Path) -> str:

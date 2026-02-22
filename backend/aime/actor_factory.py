@@ -11,6 +11,7 @@ Selection Priority:
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from backend.aime.models import Actor, SubtaskSpec
 from backend.registry import AGENT_REGISTRY, AgentEntry
@@ -24,13 +25,52 @@ class ActorFactory:
 
     Uses the AGENT_REGISTRY to find agents and match capabilities.
     Implements the selection priority defined in the AIME architecture.
+    Supports filtering agents by user's enabled plugins.
     """
 
-    def __init__(self):
-        """Initialize the Actor Factory."""
-        logger.info("ActorFactory initialized")
+    def __init__(self, user_id: UUID | str | None = None):
+        """Initialize the Actor Factory.
 
-    def select_actor(self, spec: SubtaskSpec) -> Actor:
+        Args:
+            user_id: Optional user ID for plugin filtering. If provided,
+                    only agents from enabled plugins will be considered.
+                    Accepts UUID or string representation.
+        """
+        # Convert string to UUID if needed
+        if isinstance(user_id, str):
+            self.user_id = UUID(user_id)
+        else:
+            self.user_id = user_id
+        self._disabled_plugins: set[str] | None = None
+        logger.info(f"ActorFactory initialized (user_id={self.user_id})")
+
+    async def _get_disabled_plugins(self) -> set[str]:
+        """Get the set of disabled plugin names for the current user.
+
+        Cached for the lifetime of this factory instance.
+        """
+        if self._disabled_plugins is None:
+            if self.user_id:
+                from backend.plugins.database import get_disabled_plugin_names
+                self._disabled_plugins = await get_disabled_plugin_names(self.user_id)
+            else:
+                self._disabled_plugins = set()
+        return self._disabled_plugins
+
+    def _is_agent_enabled(self, entry: AgentEntry, disabled_plugins: set[str]) -> bool:
+        """Check if an agent is enabled for the current user.
+
+        Args:
+            entry: Agent registry entry
+            disabled_plugins: Set of disabled plugin names
+
+        Returns:
+            True if the agent is enabled (not in disabled list)
+        """
+        plugin_name = f"{entry.source}:{entry.name}"
+        return plugin_name not in disabled_plugins
+
+    async def select_actor(self, spec: SubtaskSpec) -> Actor:
         """Select and instantiate actor for a subtask.
 
         Selection priority:
@@ -82,10 +122,11 @@ class ActorFactory:
                     span.update(output={"selected_actor": actor.name, "path": "explicit"})
                 return actor
 
-            # Priority 2: Capability matching
+            # Priority 2: Capability matching (with user plugin filtering)
             if spec.capabilities:
                 logger.info(f"[select_actor] Using capability matching path")
-                match = self.match_by_capabilities(spec.capabilities)
+                disabled_plugins = await self._get_disabled_plugins()
+                match = self.match_by_capabilities(spec.capabilities, disabled_plugins)
                 if match:
                     entry, score = match
                     logger.info(
@@ -142,7 +183,7 @@ class ActorFactory:
         return self._create_actor_from_entry(entry, spec)
 
     def match_by_capabilities(
-        self, required: list[str]
+        self, required: list[str], disabled_plugins: set[str] | None = None
     ) -> tuple[AgentEntry, int] | None:
         """Find best matching agent by capabilities.
 
@@ -150,9 +191,11 @@ class ActorFactory:
         - Each matching capability adds 1 to score
         - Preset agents get +0.5 tiebreaker bonus
         - Returns agent with highest score
+        - Agents from disabled plugins are excluded
 
         Args:
             required: List of required capabilities
+            disabled_plugins: Set of disabled plugin names to exclude
 
         Returns:
             Tuple of (matched entry, score) or None if no match
@@ -163,9 +206,15 @@ class ActorFactory:
         logger.debug(f"[match_by_capabilities] Matching required={required}")
         required_set = set(required)
         best_match: tuple[AgentEntry, float] | None = None
+        disabled_plugins = disabled_plugins or set()
 
         for entry in AGENT_REGISTRY.values():
             if not entry.capabilities:
+                continue
+
+            # Skip disabled agents
+            if not self._is_agent_enabled(entry, disabled_plugins):
+                logger.debug(f"[match_by_capabilities] Skipping disabled agent: {entry.name}")
                 continue
 
             # Count matching capabilities

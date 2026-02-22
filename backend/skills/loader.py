@@ -86,8 +86,12 @@ def parse_skill_metadata(
         return None, None, "atomic", []
 
 
-def load_skills_from_directory(skills_dir: Path) -> int:
+def load_skills_from_directory(skills_dir: Path, source: str = "custom") -> int:
     """Load all SKILL.md files from a directory.
+
+    Args:
+        skills_dir: Directory containing skill subdirectories with SKILL.md files
+        source: Origin identifier for the skills (e.g., "preset", "custom", "package:agent-name")
 
     Returns the number of skills loaded.
     """
@@ -110,9 +114,10 @@ def load_skills_from_directory(skills_dir: Path) -> int:
                 description=description or "",
                 path=skill_dir,
                 skill_type=skill_type,
+                source=source,
             )
             register_skill(entry)
-            logger.info(f"Registered skill: {name} (type={skill_type})")
+            logger.info(f"Registered skill: {name} (type={skill_type}, source={source})")
 
             # Register workflow skill info for Planner use
             if skill_type == "workflow" and steps:
@@ -139,14 +144,14 @@ def load_all_skills() -> int:
 
     # Load from anthropic skills (submodule has nested skills/ directory)
     anthropic_dir = skills_root / "anthropic" / "skills"
-    count = load_skills_from_directory(anthropic_dir)
+    count = load_skills_from_directory(anthropic_dir, source="preset")
     if count:
         logger.info(f"Loaded {count} Anthropic skills from {anthropic_dir}")
     total += count
 
     # Load from custom skills
     custom_dir = skills_root / "custom"
-    count = load_skills_from_directory(custom_dir)
+    count = load_skills_from_directory(custom_dir, source="custom")
     if count:
         logger.info(f"Loaded {count} custom skills from {custom_dir}")
     total += count

@@ -9,6 +9,8 @@ export interface Agent {
 export interface Skill {
   name: string;
   description: string;
+  source?: string;
+  skill_type?: "atomic" | "workflow";
 }
 
 /** Todo item from DeepAgents TodoListMiddleware */
