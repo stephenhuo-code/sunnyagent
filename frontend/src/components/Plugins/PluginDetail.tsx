@@ -2,11 +2,13 @@
  * Plugin detail panel - displays full plugin information and controls.
  */
 
-import type { PluginInfo } from "../../types/plugins";
+import ReactMarkdown from "react-markdown";
+import type { CommandDetail, PluginInfo } from "../../types/plugins";
 import "./Plugins.css";
 
 interface PluginDetailProps {
   plugin: PluginInfo | null;
+  commandDetail: CommandDetail | null;
   onToggleEnabled?: (plugin: PluginInfo, enabled: boolean) => void;
   onShare?: (plugin: PluginInfo) => void;
   onDelete?: (plugin: PluginInfo) => void;
@@ -16,17 +18,55 @@ interface PluginDetailProps {
 
 export function PluginDetail({
   plugin,
+  commandDetail,
   onToggleEnabled,
   onShare,
   onDelete,
   onRate,
   loading = false,
 }: PluginDetailProps) {
+  // Show command detail if available
+  if (commandDetail) {
+    return (
+      <div className="plugin-detail">
+        {loading && <div className="plugin-detail-loading">Loading...</div>}
+
+        <div className="plugin-detail-header">
+          <div className="plugin-detail-title">
+            <h2>/{commandDetail.name}</h2>
+            <span className="plugin-badge type-command">Command</span>
+          </div>
+        </div>
+
+        <div className="plugin-detail-section">
+          <h3>Description</h3>
+          <p>{commandDetail.description}</p>
+        </div>
+
+        {commandDetail.argument_hint && (
+          <div className="plugin-detail-section">
+            <h3>Usage</h3>
+            <code className="command-usage">
+              /{commandDetail.name} {commandDetail.argument_hint}
+            </code>
+          </div>
+        )}
+
+        <div className="plugin-detail-section command-workflow">
+          <h3>Workflow</h3>
+          <div className="command-content">
+            <ReactMarkdown>{commandDetail.content}</ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!plugin) {
     return (
       <div className="plugin-detail plugin-detail-empty">
         <div className="plugin-detail-placeholder">
-          <span className="placeholder-icon">🔌</span>
+          <span className="placeholder-icon">{"\u{1F50C}"}</span>
           <p>Select a plugin to view details</p>
         </div>
       </div>
@@ -36,9 +76,6 @@ export function PluginDetail({
   const getTypeLabel = (): string => {
     if (plugin.type === "agent") {
       return "Agent";
-    }
-    if (plugin.skill_type === "workflow") {
-      return "Workflow Skill";
     }
     return "Skill";
   };
@@ -167,35 +204,10 @@ export function PluginDetail({
             {plugin.skills.map((skill) => (
               <li key={skill.name}>
                 <strong>{skill.display_name}</strong>
-                <span className="skill-type-badge">
-                  {skill.skill_type === "workflow" ? "workflow" : "atomic"}
-                </span>
                 <p>{skill.description}</p>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      {plugin.steps && plugin.steps.length > 0 && (
-        <div className="plugin-detail-section">
-          <h3>Workflow Steps</h3>
-          <ol className="plugin-steps-list">
-            {plugin.steps.map((step, index) => (
-              <li key={step.id}>
-                <div className="step-header">
-                  <span className="step-number">{index + 1}</span>
-                  <span className="step-id">{step.id}</span>
-                </div>
-                <p className="step-description">{step.description}</p>
-                {step.required_capability && (
-                  <span className="step-capability">
-                    Requires: {step.required_capability}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
         </div>
       )}
 

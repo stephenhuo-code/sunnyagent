@@ -60,7 +60,8 @@ ALLOWED_EXTENSIONS = {
 
 def _get_project_files_base_dir() -> str:
     """Get the base directory for project files."""
-    return os.getenv("PROJECT_FILES_DIR", "/tmp/sunnyagent_project_files")
+    from backend.core.storage import get_project_files_dir
+    return str(get_project_files_dir())
 
 
 def _validate_file_extension(filename: str) -> bool:

@@ -1,8 +1,7 @@
 import { useState, memo } from "react";
 import { ChevronRight, ChevronDown, CheckCircle, Circle, Loader2, XCircle, MinusCircle } from "lucide-react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import ToolCallCard from "./ToolCallCard";
+import SafeMarkdown from "./SafeMarkdown";
 import type { Todo, SpawnedTask } from "../types";
 
 interface TaskListProps {
@@ -128,7 +127,7 @@ function TaskList({ todos, spawnedTasks }: TaskListProps) {
                 {/* Task output (shown after todos) */}
                 {isExpanded && hasOutput && (
                   <div className="task-output">
-                    <Markdown remarkPlugins={[remarkGfm]}>{task.output}</Markdown>
+                    <SafeMarkdown>{task.output!}</SafeMarkdown>
                   </div>
                 )}
 

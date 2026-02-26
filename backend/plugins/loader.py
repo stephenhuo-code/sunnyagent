@@ -153,7 +153,8 @@ def load_agent_from_directory(
         logger.info(f"Registered {skill_count} skills from {source} agent '{agent_name}'")
 
     # Set up FilesystemBackend scoped to package directory
-    backend = FilesystemBackend(root_dir=pkg_dir, virtual_mode=True)
+    # virtual_mode=False allows absolute paths (needed for project files)
+    backend = FilesystemBackend(root_dir=pkg_dir, virtual_mode=False)
 
     # Memory: always load AGENTS.md
     memory = ["/AGENTS.md"]

@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Optional
 
 import docker
+from docker.types import Mount
+
+from backend.core.storage import get_project_files_dir, get_temp_files_dir
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,22 @@ class ContainerPool:
         except docker.errors.NotFound:
             pass
 
+        # 只读挂载数据目录，让沙箱能直接读取外部文件
+        mounts = [
+            Mount(
+                target="/data/project_files",
+                source=str(get_project_files_dir()),
+                type="bind",
+                read_only=True,
+            ),
+            Mount(
+                target="/data/tmp",
+                source=str(get_temp_files_dir()),
+                type="bind",
+                read_only=True,
+            ),
+        ]
+
         container = await loop.run_in_executor(
             None,
             lambda: self.client.containers.run(
@@ -104,6 +123,7 @@ class ContainerPool:
                 name=container_name,  # 命名容器
                 labels=CONTAINER_LABELS,  # 添加标签用于分组
                 detach=True,
+                mounts=mounts,  # 只读挂载数据目录
                 mem_limit=self.mem_limit,
                 cpu_quota=self.cpu_quota,
                 network_disabled=True,  # 禁用网络访问
@@ -145,15 +165,15 @@ class ContainerPool:
             await self._destroy_container(pooled)
             pooled = await self._create_container()
 
-        # 清理容器输出目录
+        # 清理容器输入/输出目录
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
-                lambda: pooled.container.exec_run(["rm", "-rf", "/output/*"]),
+                lambda: pooled.container.exec_run(["rm", "-rf", "/output/*", "/input/*"]),
             )
         except Exception as e:
-            logger.warning(f"Failed to clean output dir: {e}")
+            logger.warning(f"Failed to clean dirs: {e}")
 
         await self._pool.put(pooled)
 

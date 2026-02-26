@@ -3,6 +3,7 @@
  */
 
 import type {
+  CommandDetail,
   MarketplaceParams,
   PluginInfo,
   PluginListParams,
@@ -183,4 +184,15 @@ export async function ratePlugin(
       body: JSON.stringify(request),
     }
   );
+}
+
+// =============================================================================
+// Command Detail APIs
+// =============================================================================
+
+/**
+ * Get detailed info for a specific command including workflow content.
+ */
+export async function getCommandDetail(name: string): Promise<CommandDetail> {
+  return fetchJSON<CommandDetail>(`${API_BASE}/commands/${encodeURIComponent(name)}`);
 }

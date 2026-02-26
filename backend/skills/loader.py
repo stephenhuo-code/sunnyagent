@@ -1,4 +1,8 @@
-"""Loader for SKILL.md files from skills directories."""
+"""Loader for SKILL.md files from skills directories.
+
+Skills are internal resources used by agents. They are NOT user-invocable
+commands (use Commands for that).
+"""
 
 import logging
 import re
@@ -8,11 +12,7 @@ import yaml
 
 from backend.skills.registry import (
     SkillEntry,
-    SkillStep,
-    SkillType,
-    WorkflowSkillInfo,
     register_skill,
-    register_workflow_skill,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,35 +23,28 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def parse_skill_metadata(
     skill_md_path: Path,
-) -> tuple[str | None, str | None, SkillType, list[SkillStep]]:
+) -> tuple[str | None, str | None]:
     """Parse YAML frontmatter from a SKILL.md file.
 
-    Returns (name, description, skill_type, steps) or (None, None, "atomic", []) if parsing fails.
+    Returns (name, description) or (None, None) if parsing fails.
 
     YAML frontmatter format:
         ---
         name: skill-name
         description: Short description
-        type: workflow  # Optional: "atomic" (default) or "workflow"
-        steps:          # Optional: Only for workflow skills
-          - id: step1
-            description: First step description
-            required_capability: web_search  # Optional
-          - id: step2
-            description: Second step description
         ---
     """
     try:
         content = skill_md_path.read_text()
     except Exception as e:
         logger.warning(f"Failed to read {skill_md_path}: {e}")
-        return None, None, "atomic", []
+        return None, None
 
     # Extract YAML frontmatter between --- markers
     match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
     if not match:
         logger.warning(f"No YAML frontmatter in {skill_md_path}")
-        return None, None, "atomic", []
+        return None, None
 
     try:
         metadata = yaml.safe_load(match.group(1))
@@ -59,31 +52,12 @@ def parse_skill_metadata(
         description = metadata.get("description", "")
         if not name:
             logger.warning(f"No 'name' field in {skill_md_path}")
-            return None, None, "atomic", []
+            return None, None
 
-        # Parse AIME extensions: type and steps
-        skill_type: SkillType = metadata.get("type", "atomic")
-        if skill_type not in ("atomic", "workflow"):
-            logger.warning(f"Invalid skill type '{skill_type}' in {skill_md_path}, defaulting to 'atomic'")
-            skill_type = "atomic"
-
-        steps: list[SkillStep] = []
-        raw_steps = metadata.get("steps", [])
-        if isinstance(raw_steps, list):
-            for step_data in raw_steps:
-                if isinstance(step_data, dict) and "id" in step_data:
-                    steps.append(
-                        SkillStep(
-                            id=step_data["id"],
-                            description=step_data.get("description", ""),
-                            required_capability=step_data.get("required_capability"),
-                        )
-                    )
-
-        return name, description, skill_type, steps
+        return name, description
     except yaml.YAMLError as e:
         logger.warning(f"Invalid YAML in {skill_md_path}: {e}")
-        return None, None, "atomic", []
+        return None, None
 
 
 def load_skills_from_directory(skills_dir: Path, source: str = "custom") -> int:
@@ -107,24 +81,16 @@ def load_skills_from_directory(skills_dir: Path, source: str = "custom") -> int:
         if not skill_md.exists():
             continue
 
-        name, description, skill_type, steps = parse_skill_metadata(skill_md)
+        name, description = parse_skill_metadata(skill_md)
         if name:
             entry = SkillEntry(
                 name=name,
                 description=description or "",
                 path=skill_dir,
-                skill_type=skill_type,
                 source=source,
             )
             register_skill(entry)
-            logger.info(f"Registered skill: {name} (type={skill_type}, source={source})")
-
-            # Register workflow skill info for Planner use
-            if skill_type == "workflow" and steps:
-                workflow_info = WorkflowSkillInfo(name=name, steps=steps)
-                register_workflow_skill(workflow_info)
-                logger.info(f"Registered workflow skill steps for: {name} ({len(steps)} steps)")
-
+            logger.info(f"Registered skill: {name} (source={source})")
             count += 1
 
     return count

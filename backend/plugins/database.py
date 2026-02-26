@@ -81,6 +81,23 @@ async def get_disabled_plugin_names(user_id: UUID) -> set[str]:
     return {row["plugin_name"] for row in rows}
 
 
+async def get_enabled_package_plugins(user_id: UUID) -> set[str]:
+    """Get names of explicitly enabled package plugins for a user.
+
+    Package plugins default to disabled; only return those explicitly enabled.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT plugin_name
+        FROM user_plugin_states
+        WHERE user_id = $1 AND plugin_name LIKE 'package:%' AND enabled = TRUE
+        """,
+        user_id,
+    )
+    return {row["plugin_name"] for row in rows}
+
+
 async def upsert_user_plugin_state(
     user_id: UUID, plugin_name: str, enabled: bool
 ) -> UserPluginState:

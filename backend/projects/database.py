@@ -156,7 +156,8 @@ async def delete_project(project_id: UUID, user_id: UUID) -> bool:
 
 async def _cleanup_project_files(user_id: UUID, project_id: UUID, file_paths: list) -> None:  # type: ignore[type-arg]
     """Clean up physical files for a deleted project."""
-    base_dir = os.getenv("PROJECT_FILES_DIR", "/tmp/sunnyagent_project_files")
+    from backend.core.storage import get_project_files_dir
+    base_dir = str(get_project_files_dir())
     project_dir = os.path.join(base_dir, str(user_id), str(project_id))
 
     try:

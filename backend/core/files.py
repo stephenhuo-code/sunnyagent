@@ -52,8 +52,9 @@ async def upload_file(
         )
 
     # Generate file ID and save
+    from backend.core.storage import get_temp_files_dir
     file_id = uuid.uuid4().hex[:8]
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
+    file_dir = get_temp_files_dir() / file_id
     file_dir.mkdir(parents=True, exist_ok=True)
     file_path = file_dir / (file.filename or "uploaded_file")
 
@@ -109,7 +110,8 @@ async def download_file_by_id(
         )
 
     # Fallback for SQLite mode (no permission check)
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
+    from backend.core.storage import get_temp_files_dir
+    file_dir = get_temp_files_dir() / file_id
     if not file_dir.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -143,7 +145,8 @@ async def get_file_content(
         file_path = Path(file_record["storage_path"])
     else:
         # Fallback for SQLite mode (no permission check)
-        file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
+        from backend.core.storage import get_temp_files_dir
+        file_dir = get_temp_files_dir() / file_id
         if not file_dir.exists():
             raise HTTPException(status_code=404, detail="File not found")
         files = list(file_dir.iterdir())
@@ -187,7 +190,8 @@ async def download_file(
     Bug fix: Check filesystem first, then validate ownership if DB record exists.
     This handles cases where sandbox generates files without user_id in config.
     """
-    file_path = f"/tmp/sunnyagent_files/{file_id}/{filename}"
+    from backend.core.storage import get_temp_files_dir
+    file_path = str(get_temp_files_dir() / file_id / filename)
 
     # First check if file exists on filesystem
     if not os.path.exists(file_path):

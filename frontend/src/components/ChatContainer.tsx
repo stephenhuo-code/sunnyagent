@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useChat } from "../hooks/useChat";
-import { getAgents, getSkills } from "../api/client";
-import type { Agent, Skill, FileAttachment } from "../types";
+import { getAgents, getCommands } from "../api/client";
+import type { Agent, Command, FileAttachment, ProjectFile } from "../types";
 import MessageList from "./MessageList";
 import InputBar from "./InputBar";
 import FilePreviewPanel from "./FilePreviewPanel";
+import HtmlViewerModal from "./HtmlViewerModal";
 
 interface ProjectContext {
   projectId: string;
@@ -15,27 +16,45 @@ interface ProjectContext {
 interface ChatContainerProps {
   initialThreadId?: string | null;
   selectedFileIds?: string[];
+  projectFiles?: ProjectFile[];
+  onToggleFileSelection?: (fileId: string) => void;
   projectContext?: ProjectContext;
   onConversationCreated?: () => void;
   /** Optional initial message to send immediately after component mounts */
   initialMessage?: string | null;
+  /** Upload file to project (when in project context) */
+  onUploadToProject?: (projectId: string, file: File) => Promise<void>;
 }
 
 export default function ChatContainer({
   initialThreadId,
   selectedFileIds = [],
+  projectFiles = [],
+  onToggleFileSelection,
   projectContext,
   onConversationCreated,
   initialMessage,
+  onUploadToProject,
 }: ChatContainerProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [commands, setCommands] = useState<Command[]>([]);
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+  const [htmlViewerFile, setHtmlViewerFile] = useState<FileAttachment | null>(null);
   const initialMessageSentRef = useRef(false);
+
+  // Handle file click - route HTML files to modal, others to side panel
+  const handleFileClick = useCallback((file: FileAttachment) => {
+    const ext = file.filename.toLowerCase().slice(file.filename.lastIndexOf("."));
+    if (ext === ".html" || ext === ".htm") {
+      setHtmlViewerFile(file);  // HTML files use modal
+    } else {
+      setPreviewFile(file);     // Other files use side panel
+    }
+  }, []);
 
   useEffect(() => {
     getAgents().then(setAgents).catch(() => {});
-    getSkills().then(setSkills).catch(() => {});
+    getCommands().then(setCommands).catch(() => {});
   }, []);
 
   const { messages, isStreaming, threadId, sendMessage, cancel, loadThread } =
@@ -76,23 +95,30 @@ export default function ChatContainer({
           messages={messages}
           isStreaming={isStreaming}
           scrollKey={initialThreadId ?? undefined}
-          onFileClick={setPreviewFile}
+          onFileClick={handleFileClick}
         />
         <InputBar
           onSend={sendMessage}
           onCancel={cancel}
           isStreaming={isStreaming}
           agents={agents}
-          skills={skills}
-          projectFileCount={projectContext?.selectedFileCount}
+          commands={commands}
+          projectFiles={projectFiles.filter(f => selectedFileIds.includes(f.file_id))}
+          onRemoveProjectFile={onToggleFileSelection}
           projectFileIds={selectedFileIds}
           projectId={projectContext?.projectId}
+          onUploadToProject={onUploadToProject}
         />
       </div>
 
       <FilePreviewPanel
         file={previewFile}
         onClose={() => setPreviewFile(null)}
+      />
+
+      <HtmlViewerModal
+        file={htmlViewerFile}
+        onClose={() => setHtmlViewerFile(null)}
       />
     </div>
   );

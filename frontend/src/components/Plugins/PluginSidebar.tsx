@@ -3,14 +3,16 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Plus, Search, Upload, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 import type { PluginInfo, PluginSource, PluginType } from "../../types/plugins";
 import "./Plugins.css";
 
 interface PluginSidebarProps {
   plugins: PluginInfo[];
   selectedPlugin: PluginInfo | null;
+  selectedCategory: "commands" | "skills" | null;
   onSelectPlugin: (plugin: PluginInfo) => void;
+  onSelectCategory: (plugin: PluginInfo, category: "commands" | "skills") => void;
   onAddClick: (action?: "browse" | "upload") => void;
   loading?: boolean;
 }
@@ -22,7 +24,9 @@ type FilterType = PluginType | "all";
 export function PluginSidebar({
   plugins,
   selectedPlugin,
+  selectedCategory,
   onSelectPlugin,
+  onSelectCategory,
   onAddClick,
   loading = false,
 }: PluginSidebarProps) {
@@ -30,22 +34,7 @@ export function PluginSidebar({
   const [sourceFilter, setSourceFilter] = useState<FilterSource>("all");
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const addMenuRef = useRef<HTMLDivElement>(null);
-
-  // Toggle agent expansion
-  const toggleAgentExpand = (agentName: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedAgents((prev) => {
-      const next = new Set(prev);
-      if (next.has(agentName)) {
-        next.delete(agentName);
-      } else {
-        next.add(agentName);
-      }
-      return next;
-    });
-  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -221,33 +210,18 @@ export function PluginSidebar({
                   <div className="plugin-group-header">{getSourceLabel(source)}</div>
                   {sourcePlugins.map((plugin) => (
                     <div key={plugin.name} className="plugin-tree-item">
-                      {/* Plugin item */}
+                      {/* Agent item */}
                       <div
                         className={`plugin-item ${selectedPlugin?.name === plugin.name ? "selected" : ""} ${!plugin.enabled ? "disabled" : ""}`}
                         onClick={() => onSelectPlugin(plugin)}
                       >
-                        {/* Expand/collapse button for package agents with skills */}
-                        {source === "package" && plugin.type === "agent" && plugin.skills && plugin.skills.length > 0 ? (
-                          <button
-                            className="plugin-expand-btn"
-                            onClick={(e) => toggleAgentExpand(plugin.name, e)}
-                          >
-                            {expandedAgents.has(plugin.name) ? (
-                              <ChevronDown size={14} />
-                            ) : (
-                              <ChevronRight size={14} />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="plugin-expand-spacer" />
-                        )}
+                        <span className="plugin-expand-spacer" />
                         <span className="plugin-icon">{getPluginIcon(plugin)}</span>
                         <div className="plugin-item-content">
                           <div className="plugin-item-name">{plugin.display_name}</div>
                           <div className="plugin-item-type">
                             {plugin.type}
                             {plugin.skill_type === "workflow" && " (workflow)"}
-                            {plugin.skills && plugin.skills.length > 0 && ` (${plugin.skills.length} skills)`}
                           </div>
                         </div>
                         <div
@@ -255,35 +229,59 @@ export function PluginSidebar({
                         />
                       </div>
 
-                      {/* Nested skills for package agents */}
-                      {source === "package" &&
-                        plugin.type === "agent" &&
-                        plugin.skills &&
-                        plugin.skills.length > 0 &&
-                        expandedAgents.has(plugin.name) && (
-                          <div className="plugin-nested-skills">
-                            {plugin.skills.map((skill) => (
-                              <div
-                                key={skill.name}
-                                className={`plugin-item plugin-skill-item ${selectedPlugin?.name === skill.name ? "selected" : ""} ${!skill.enabled ? "disabled" : ""}`}
-                                onClick={() => onSelectPlugin(skill)}
-                              >
-                                <span className="plugin-expand-spacer" />
-                                <span className="plugin-icon">{getPluginIcon(skill)}</span>
-                                <div className="plugin-item-content">
-                                  <div className="plugin-item-name">{skill.display_name}</div>
-                                  <div className="plugin-item-type">
-                                    skill
-                                    {skill.skill_type === "workflow" && " (workflow)"}
-                                  </div>
+                      {/* Category items: Commands and Skills */}
+                      {((plugin.commands && plugin.commands.length > 0) ||
+                        (plugin.skills && plugin.skills.length > 0)) && (
+                        <div className="plugin-nested-items">
+                          {/* Commands category */}
+                          {plugin.commands && plugin.commands.length > 0 && (
+                            <div
+                              className={`plugin-item plugin-category-item ${
+                                selectedPlugin?.name === plugin.name && selectedCategory === "commands"
+                                  ? "selected"
+                                  : ""
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectCategory(plugin, "commands");
+                              }}
+                            >
+                              <span className="plugin-expand-spacer" />
+                              <span className="plugin-icon">{"\u2318"}</span>
+                              <div className="plugin-item-content">
+                                <div className="plugin-item-name">Commands</div>
+                                <div className="plugin-item-type">
+                                  {plugin.commands.length} command{plugin.commands.length !== 1 ? "s" : ""}
                                 </div>
-                                <div
-                                  className={`plugin-status ${skill.enabled ? "enabled" : "disabled"}`}
-                                />
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            </div>
+                          )}
+
+                          {/* Skills category */}
+                          {plugin.skills && plugin.skills.length > 0 && (
+                            <div
+                              className={`plugin-item plugin-category-item ${
+                                selectedPlugin?.name === plugin.name && selectedCategory === "skills"
+                                  ? "selected"
+                                  : ""
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectCategory(plugin, "skills");
+                              }}
+                            >
+                              <span className="plugin-expand-spacer" />
+                              <span className="plugin-icon">{"\u26A1"}</span>
+                              <div className="plugin-item-content">
+                                <div className="plugin-item-name">Skills</div>
+                                <div className="plugin-item-type">
+                                  {plugin.skills.length} skill{plugin.skills.length !== 1 ? "s" : ""}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -230,6 +230,14 @@ class AIMEPlanner:
                     event_id += 1
                     yield event
 
+            elif intent.action == "command":
+                # User invoked a /command
+                async for event in self._handle_command(
+                    message, thread_id, intent, event_id
+                ):
+                    event_id += 1
+                    yield event
+
             else:
                 # Fallback to direct reply for unknown actions
                 logger.warning(f"Unknown action: {intent.action}, falling back to direct_reply")
@@ -581,6 +589,50 @@ class AIMEPlanner:
                     event_id,
                 )
 
+            # Persist delegate metadata to checkpoint for history retrieval
+            try:
+                from backend.checkpointer_store import get_history_graph
+                from langchain_core.runnables.config import RunnableConfig
+                history_graph = get_history_graph()
+                if history_graph:
+                    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+                    # Build thinking_steps from the routing event
+                    thinking_steps = [
+                        {
+                            "type": "routing",
+                            "content": f"Routing to {actor.name}: {message[:100]}...",
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    ]
+                    # Build spawned_tasks
+                    spawned_tasks = [
+                        {
+                            "task_id": spec.id,
+                            "subagent_type": actor.name,
+                            "description": message[:200],
+                            "status": "success",
+                            "duration_ms": duration_ms,
+                            "toolCalls": [],
+                            "output": result_text[:1000] if result_text else None,
+                        }
+                    ]
+                    # Create AIMessage with metadata in additional_kwargs
+                    ai_message = AIMessage(
+                        content=result_text,
+                        additional_kwargs={
+                            "thinking_steps": thinking_steps,
+                            "spawned_tasks": spawned_tasks,
+                            "display_scenario": "agent",
+                        }
+                    )
+                    await history_graph.aupdate_state(
+                        config,
+                        {"messages": [HumanMessage(content=message), ai_message]}
+                    )
+                    logger.info(f"[_handle_delegate] Persisted messages with metadata to checkpoint")
+            except Exception as e:
+                logger.warning(f"[_handle_delegate] Failed to persist messages: {e}")
+
         except ValueError as e:
             # Agent not found error
             logger.error(f"Delegate failed: {e}")
@@ -608,6 +660,648 @@ class AIMEPlanner:
                 yield _format_sse(
                     "text_delta",
                     {"text": f"抱歉，执行任务时出错：{str(e)}"},
+                    event_id,
+                )
+
+    def _parse_workflow_steps(self, content: str) -> list[dict[str, str]]:
+        """Parse workflow steps from command markdown.
+
+        Steps are located under the `## workflow` or `## 工作流程` section:
+
+        ## workflow
+
+        ### 1. 理解问题
+        解析用户的问题并确定...
+
+        ### 2. 获取数据
+        优先级 1: ...
+
+        ## 示例  <-- workflow section ends here
+
+        Returns:
+            List of {"id": "step_1", "title": "理解问题", "content": "..."}
+        """
+        import re
+
+        # 1. Find the ## workflow or ## 工作流程 section (supports both EN and CN)
+        workflow_match = re.search(
+            r'^##\s*(workflow|工作流程)\s*$', content, re.MULTILINE | re.IGNORECASE
+        )
+        if not workflow_match:
+            return []
+
+        workflow_start = workflow_match.end()
+
+        # 2. Find where workflow section ends (next ## heading or end of content)
+        next_section = re.search(r'^##\s+[^#]', content[workflow_start:], re.MULTILINE)
+        if next_section:
+            workflow_end = workflow_start + next_section.start()
+        else:
+            workflow_end = len(content)
+
+        workflow_content = content[workflow_start:workflow_end]
+
+        # 3. Parse ### N. Title steps within workflow section
+        step_pattern = r'###\s*(\d+)[\.、]\s*(.+?)(?=\n)'
+        matches = list(re.finditer(step_pattern, workflow_content))
+
+        if not matches:
+            return []
+
+        steps = []
+        for i, match in enumerate(matches):
+            step_num = match.group(1)
+            step_title = match.group(2).strip()
+            start_pos = match.end()
+
+            # Content ends at next step or end of workflow section
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+            else:
+                end_pos = len(workflow_content)
+
+            step_content = workflow_content[start_pos:end_pos].strip()
+
+            steps.append({
+                "id": f"step_{step_num}",
+                "title": step_title,
+                "content": step_content,
+            })
+
+        return steps
+
+    async def _execute_command_steps(
+        self,
+        command_name: str,
+        user_args: str,
+        workflow_steps: list[dict[str, str]],
+        agent_name: str | None,
+        thread_id: str,
+        event_id: int,
+        file_section: str = "",
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Execute command workflow steps sequentially.
+
+        Creates SubtaskSpecs for each step and executes them in order,
+        passing context between steps.
+
+        Args:
+            command_name: Name of the command being executed
+            user_args: User's arguments to the command
+            workflow_steps: List of parsed workflow steps
+            agent_name: Optional explicit agent name
+            thread_id: Thread ID (original, used for persisting final result)
+            event_id: Starting event ID
+            file_section: Optional file context section
+
+        Yields:
+            SSE events for each step execution
+        """
+        # Create independent thread_id for command execution to avoid loading full history
+        # This significantly reduces prompt tokens (from ~100k to ~10k)
+        command_thread_id = f"cmd-{command_name}-{uuid4().hex[:8]}"
+
+        # 1. Create SubtaskSpecs for each step
+        subtasks: list[SubtaskSpec] = []
+        for i, step in enumerate(workflow_steps):
+            step_description = f"""## 命令: /{command_name} - 步骤 {step['id']}
+
+## 用户原始请求
+{user_args}
+{file_section}
+## 当前步骤: {step['title']}
+
+{step['content']}
+
+## 重要
+- 只完成当前步骤的工作
+- 不要执行后续步骤
+"""
+            spec = SubtaskSpec(
+                id=f"cmd-{command_name}-{step['id']}-{uuid4().hex[:8]}",
+                description=step_description,
+                explicit_agent=agent_name,
+                depends_on=[subtasks[i - 1].id] if i > 0 else [],
+            )
+            subtasks.append(spec)
+
+        # 2. Add all subtasks to progress manager
+        for spec in subtasks:
+            self.progress_manager.add_task(spec)
+
+        # 3. Select actor once (all steps use same agent)
+        actor = await self.actor_factory.select_actor(subtasks[0])
+
+        # 4. Emit thinking event with step count
+        yield _format_sse(
+            "thinking",
+            {
+                "content": f"执行命令 /{command_name}，共 {len(subtasks)} 个步骤",
+                "type": "command",
+            },
+            event_id,
+        )
+        event_id += 1
+
+        # 5. Emit task_spawned events for all steps
+        for i, spec in enumerate(subtasks):
+            step = workflow_steps[i]
+            yield _format_sse(
+                "task_spawned",
+                {
+                    "task_id": spec.id,
+                    "subagent_type": actor.name,
+                    "description": f"步骤 {i + 1}: {step['title']}",
+                    "status": "pending",
+                },
+                event_id,
+            )
+            event_id += 1
+
+        # 6. Execute steps sequentially
+        accumulated_context = ""
+        all_results: list[dict[str, Any]] = []
+        start_time = time.time()
+
+        for i, spec in enumerate(subtasks):
+            step = workflow_steps[i]
+            step_start_time = time.time()
+
+            # Emit task_started
+            yield _format_sse("task_started", {"task_id": spec.id}, event_id)
+            event_id += 1
+
+            self.progress_manager.start_task(spec.id, actor.name)
+
+            # Build prompt with accumulated context from previous steps
+            task_message = spec.description
+            if accumulated_context:
+                task_message += f"\n\n## 前序步骤结果\n\n{accumulated_context}"
+
+            # Get context prompt if available
+            context_prompt = None
+            if self._current_context:
+                context_prompt = self._current_context.build_context_prompt()
+
+            # Execute step using command_thread_id to avoid loading full history
+            result_text = ""
+            async for event in self._execute_actor(
+                actor,
+                task_message,
+                command_thread_id,
+                event_id,
+                task_id=spec.id,
+                user_id=self._current_user_id,
+                system_context=context_prompt,
+            ):
+                event_id += 1
+                event_type = event.get("event")
+
+                if event_type == "text_delta":
+                    data = json.loads(event.get("data", "{}"))
+                    text_chunk = data.get("text", "")
+                    result_text += text_chunk
+                    yield _format_sse(
+                        "task_output",
+                        {"task_id": spec.id, "text": text_chunk},
+                        event_id,
+                    )
+                elif event_type in ("tool_call_start", "tool_call_result"):
+                    data = json.loads(event.get("data", "{}"))
+                    data["task_id"] = spec.id
+                    yield _format_sse(str(event_type), data, event_id)
+
+            # Complete step
+            step_duration_ms = int((time.time() - step_start_time) * 1000)
+            self.progress_manager.complete_task(spec.id, result_text)
+
+            # Emit task_completed
+            yield _format_sse(
+                "task_completed",
+                {
+                    "task_id": spec.id,
+                    "status": "success",
+                    "duration_ms": step_duration_ms,
+                },
+                event_id,
+            )
+            event_id += 1
+
+            # Track result for history
+            all_results.append({
+                "task_id": spec.id,
+                "subagent_type": actor.name,
+                "description": f"步骤 {i + 1}: {step['title']}",
+                "status": "success",
+                "duration_ms": step_duration_ms,
+                "toolCalls": [],
+                "output": result_text[:1000] if result_text else None,
+            })
+
+            # Add to accumulated context for next step (limit to prevent context overflow)
+            accumulated_context += f"\n### {step['title']}\n{result_text[:2000]}\n"
+
+            logger.info(
+                f"[_execute_command_steps] Step {i + 1}/{len(subtasks)} completed - "
+                f"task_id={spec.id[:8]}, duration_ms={step_duration_ms}"
+            )
+
+        # 7. Persist to checkpoint
+        total_duration_ms = int((time.time() - start_time) * 1000)
+        try:
+            from backend.checkpointer_store import get_history_graph
+            from langchain_core.runnables.config import RunnableConfig
+
+            history_graph = get_history_graph()
+            if history_graph:
+                config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+                thinking_steps = [
+                    {
+                        "type": "routing",
+                        "content": f"执行命令 /{command_name}，共 {len(subtasks)} 个步骤",
+                        "timestamp": int(time.time() * 1000),
+                    }
+                ]
+                # Combine all step results for final output
+                final_result = "\n\n".join(
+                    f"### {workflow_steps[i]['title']}\n{r['output'] or ''}"
+                    for i, r in enumerate(all_results)
+                )
+                ai_message = AIMessage(
+                    content=final_result[:5000],
+                    additional_kwargs={
+                        "thinking_steps": thinking_steps,
+                        "spawned_tasks": all_results,
+                        "display_scenario": "agent",
+                    },
+                )
+                # Reconstruct original message
+                original_message = f"/{command_name} {user_args}" if user_args else f"/{command_name}"
+                await history_graph.aupdate_state(
+                    config,
+                    {"messages": [HumanMessage(content=original_message), ai_message]},
+                )
+                logger.info(
+                    f"[_execute_command_steps] Persisted {len(subtasks)} steps to checkpoint"
+                )
+        except Exception as e:
+            logger.warning(f"[_execute_command_steps] Failed to persist messages: {e}")
+
+        logger.info(
+            f"[_execute_command_steps] Completed /{command_name} - "
+            f"steps={len(subtasks)}, total_duration_ms={total_duration_ms}"
+        )
+
+        # 8. Output final result to user (text_delta -> message.content)
+        # Try using the last step's output (typically "展示发现" step)
+        # If last step has no output, merge all step outputs
+        if all_results:
+            final_output = all_results[-1].get("output", "")
+
+            if not final_output:
+                # Last step has no output, merge all steps with output
+                outputs = [r.get("output", "") for r in all_results if r.get("output")]
+                final_output = "\n\n---\n\n".join(outputs) if outputs else ""
+
+            if final_output:
+                yield _format_sse(
+                    "text_delta",
+                    {"text": final_output},
+                    event_id,
+                )
+
+    async def _handle_command(
+        self,
+        message: str,
+        thread_id: str,
+        intent: IntentResult,
+        start_event_id: int,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Handle command action - execute user-invoked /command.
+
+        Validates plugin permissions and delegates to the command's agent
+        with the command workflow injected.
+
+        Args:
+            message: User message (e.g., "/analyze 过去30天的用户数据")
+            thread_id: Thread ID
+            intent: Intent with command_name and plugin_name
+            start_event_id: Starting event ID
+
+        Yields:
+            SSE events (thinking, task_spawned, text_delta, task_completed)
+        """
+        from backend.commands import COMMAND_REGISTRY
+        from backend.plugins.service import is_plugin_enabled
+
+        event_id = start_event_id
+        command_name = intent.command_name
+        plugin_name = intent.plugin_name
+
+        logger.info(
+            f"[_handle_command] Starting - command={command_name}, "
+            f"plugin={plugin_name}"
+        )
+
+        # 1. Check if the plugin is enabled for this user
+        if self._current_user_id and plugin_name:
+            from uuid import UUID
+            user_uuid = UUID(self._current_user_id) if isinstance(self._current_user_id, str) else self._current_user_id
+            enabled = await is_plugin_enabled(user_uuid, plugin_name)
+            if not enabled:
+                logger.warning(
+                    f"[_handle_command] Plugin not enabled: {plugin_name}"
+                )
+                yield _format_sse(
+                    "text_delta",
+                    {
+                        "text": f"命令 /{command_name} 所属的插件 {plugin_name} 未启用。"
+                        "请在设置中启用该插件。"
+                    },
+                    event_id,
+                )
+                return
+
+        # 2. Get the command
+        if not command_name or command_name not in COMMAND_REGISTRY:
+            yield _format_sse(
+                "error",
+                {"message": f"未知命令: /{command_name}"},
+                event_id,
+            )
+            return
+
+        command = COMMAND_REGISTRY[command_name]
+
+        # 3. Load command content (workflow)
+        command_content = command.load_content()
+
+        # 4. Extract user arguments (remove /command prefix)
+        user_args = message.split(maxsplit=1)[1] if " " in message else ""
+
+        # 5. Build file section if files are available in context
+        # This ensures LLM sees the files in the same message as the workflow instructions
+        file_section = ""
+        if self._current_context and self._current_context.files.files:
+            file_prompt = self._current_context.files.to_prompt()
+            file_section = f"""
+
+## 可用文件（已提供，直接使用）
+
+{file_prompt}
+
+**重要**: 这些文件已在上下文中提供。请直接使用 `read_file(file_path="路径")` 读取，不要用 `ls`、`find` 或其他命令搜索文件系统。
+"""
+
+        # 6. Extract agent name from plugin_name (e.g., "package:data" -> "data")
+        agent_name = None
+        if plugin_name and ":" in plugin_name:
+            agent_name = plugin_name.split(":", 1)[1]
+
+        # 7. Parse workflow steps from command markdown
+        workflow_steps = self._parse_workflow_steps(command_content)
+
+        if workflow_steps:
+            # Multi-step execution: delegate to _execute_command_steps
+            logger.info(
+                f"[_handle_command] Found {len(workflow_steps)} workflow steps, "
+                f"delegating to step executor"
+            )
+            try:
+                async for event in self._execute_command_steps(
+                    command_name=command_name,
+                    user_args=user_args,
+                    workflow_steps=workflow_steps,
+                    agent_name=agent_name,
+                    thread_id=thread_id,
+                    event_id=event_id,
+                    file_section=file_section,
+                ):
+                    yield event
+            except Exception as e:
+                logger.exception(f"Command step execution failed: {e}")
+                yield _format_sse(
+                    "text_delta",
+                    {"text": f"抱歉，执行命令 /{command_name} 时出错：{str(e)}"},
+                    event_id,
+                )
+            return
+
+        # Fallback: single-task execution (no workflow steps found)
+        logger.info(
+            f"[_handle_command] No workflow steps found, using single-task execution"
+        )
+
+        # Build task description with full command content
+        task_description = f"""## 命令: /{command_name}
+
+## 用户请求
+{user_args}
+{file_section}
+## 命令说明和工作流程
+{command_content}
+
+## 重要
+严格按照上述工作流程执行任务。
+"""
+
+        logger.info(
+            f"[_handle_command] Delegating to agent={agent_name}, "
+            f"args='{user_args[:50]}...'"
+        )
+
+        # 8. Create SubtaskSpec (single task)
+        spec = SubtaskSpec(
+            id=str(uuid4()),
+            description=task_description,
+            explicit_agent=agent_name,
+        )
+
+        try:
+            # Select actor
+            actor = await self.actor_factory.select_actor(spec)
+            logger.info(f"[_handle_command] Actor selected: {actor.name}")
+
+            # Emit thinking event
+            yield _format_sse(
+                "thinking",
+                {
+                    "content": f"执行命令 /{command_name}...",
+                    "type": "command",
+                },
+                event_id,
+            )
+            event_id += 1
+
+            # Add task to progress manager
+            self.progress_manager.add_task(spec)
+
+            # Emit task_spawned
+            yield _format_sse(
+                "task_spawned",
+                {
+                    "task_id": spec.id,
+                    "subagent_type": actor.name,
+                    "description": f"/{command_name} {user_args[:100]}",
+                    "status": "pending",
+                },
+                event_id,
+            )
+            event_id += 1
+
+            # Emit task_started
+            yield _format_sse(
+                "task_started",
+                {"task_id": spec.id},
+                event_id,
+            )
+            event_id += 1
+
+            # Start task
+            self.progress_manager.start_task(spec.id, actor.name)
+
+            # Get context prompt (if any)
+            context_prompt = None
+            if self._current_context:
+                context_prompt = self._current_context.build_context_prompt()
+                logger.info(
+                    f"[_handle_command] Context prompt length: "
+                    f"{len(context_prompt) if context_prompt else 0}"
+                )
+                if context_prompt:
+                    logger.debug(
+                        f"[_handle_command] Context prompt preview: "
+                        f"{context_prompt[:200]}..."
+                    )
+            else:
+                logger.warning("[_handle_command] No current context available")
+
+            # Execute actor
+            start_time = time.time()
+            result_text = ""
+            async for event in self._execute_actor(
+                actor, task_description, thread_id, event_id,
+                task_id=spec.id,
+                user_id=self._current_user_id,
+                system_context=context_prompt,
+            ):
+                event_id += 1
+                event_type = event.get("event")
+
+                # Handle tool_call events
+                if event_type in ("tool_call_start", "tool_call_result"):
+                    data = json.loads(event.get("data", "{}"))
+                    data["task_id"] = spec.id
+                    yield _format_sse(str(event_type), data, event_id)
+                # Convert text_delta to task_output
+                elif event_type == "text_delta":
+                    data = json.loads(event.get("data", "{}"))
+                    text_chunk = data.get("text", "")
+                    result_text += text_chunk
+                    yield _format_sse(
+                        "task_output",
+                        {"task_id": spec.id, "text": text_chunk},
+                        event_id,
+                    )
+                else:
+                    yield event
+
+            # Complete task
+            duration_ms = int((time.time() - start_time) * 1000)
+            self.progress_manager.complete_task(spec.id, "completed")
+            logger.info(
+                f"[_handle_command] Completed - task_id={spec.id[:8]}, "
+                f"duration_ms={duration_ms}"
+            )
+
+            yield _format_sse(
+                "task_completed",
+                {
+                    "task_id": spec.id,
+                    "status": "success",
+                    "duration_ms": duration_ms,
+                },
+                event_id,
+            )
+            event_id += 1
+
+            # Output final result
+            if result_text:
+                yield _format_sse(
+                    "text_delta",
+                    {"text": f"\n\n{result_text}"},
+                    event_id,
+                )
+
+            # Persist command metadata to checkpoint for history retrieval
+            try:
+                from backend.checkpointer_store import get_history_graph
+                from langchain_core.runnables.config import RunnableConfig
+                history_graph = get_history_graph()
+                if history_graph:
+                    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+                    # Build thinking_steps from the command event
+                    thinking_steps = [
+                        {
+                            "type": "routing",
+                            "content": f"执行命令 /{command_name}...",
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    ]
+                    # Build spawned_tasks
+                    spawned_tasks = [
+                        {
+                            "task_id": spec.id,
+                            "subagent_type": actor.name,
+                            "description": f"/{command_name} {user_args[:100]}",
+                            "status": "success",
+                            "duration_ms": duration_ms,
+                            "toolCalls": [],
+                            "output": result_text[:1000] if result_text else None,
+                        }
+                    ]
+                    # Create AIMessage with metadata in additional_kwargs
+                    ai_message = AIMessage(
+                        content=result_text,
+                        additional_kwargs={
+                            "thinking_steps": thinking_steps,
+                            "spawned_tasks": spawned_tasks,
+                            "display_scenario": "agent",
+                        }
+                    )
+                    await history_graph.aupdate_state(
+                        config,
+                        {"messages": [HumanMessage(content=message), ai_message]}
+                    )
+                    logger.info(f"[_handle_command] Persisted messages with metadata to checkpoint")
+            except Exception as e:
+                logger.warning(f"[_handle_command] Failed to persist messages: {e}")
+
+        except ValueError as e:
+            logger.error(f"Command execution failed: {e}")
+            yield _format_sse(
+                "text_delta",
+                {"text": f"抱歉，无法找到合适的代理来处理命令 /{command_name}：{str(e)}"},
+                event_id,
+            )
+
+        except Exception as e:
+            logger.exception(f"Command execution failed: {e}")
+            if spec.id in self.progress_manager.progress.items:
+                self.progress_manager.fail_task(spec.id, str(e))
+                yield _format_sse(
+                    "task_completed",
+                    {
+                        "task_id": spec.id,
+                        "status": "error",
+                        "error": str(e),
+                    },
+                    event_id,
+                )
+            else:
+                yield _format_sse(
+                    "text_delta",
+                    {"text": f"抱歉，执行命令 /{command_name} 时出错：{str(e)}"},
                     event_id,
                 )
 
@@ -1113,13 +1807,65 @@ class AIMEPlanner:
                             event_id += 1
 
             # Step 4: Generate final summary
+            final_content = ""
             if results:
                 summary = await self._generate_summary(message, results)
+                final_content = f"\n\n## 任务完成\n\n{summary}"
                 yield _format_sse(
                     "text_delta",
-                    {"text": f"\n\n## 任务完成\n\n{summary}"},
+                    {"text": final_content},
                     event_id,
                 )
+
+            # Persist plan metadata to checkpoint for history retrieval
+            try:
+                from backend.checkpointer_store import get_history_graph
+                from langchain_core.runnables.config import RunnableConfig
+                history_graph = get_history_graph()
+                if history_graph:
+                    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+
+                    # Build thinking_steps from planning events
+                    thinking_steps = [
+                        {
+                            "type": "planning",
+                            "content": "分析任务复杂度，进行任务分解...",
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    ]
+
+                    # Build spawned_tasks from progress manager
+                    spawned_tasks = []
+                    for task_id, item in self.progress_manager.progress.items.items():
+                        spec = self.progress_manager.progress.get_spec(task_id)
+                        if spec and task_id in task_actors:
+                            actor = task_actors[task_id]
+                            spawned_tasks.append({
+                                "task_id": task_id,
+                                "subagent_type": actor.name,
+                                "description": spec.description[:200],
+                                "status": item.status,
+                                "duration_ms": getattr(item, "duration_ms", None),
+                                "toolCalls": [],
+                                "output": results.get(task_id, "")[:1000] if results.get(task_id) else None,
+                            })
+
+                    # Create AIMessage with metadata in additional_kwargs
+                    ai_message = AIMessage(
+                        content=final_content,
+                        additional_kwargs={
+                            "thinking_steps": thinking_steps,
+                            "spawned_tasks": spawned_tasks,
+                            "display_scenario": "planning",
+                        }
+                    )
+                    await history_graph.aupdate_state(
+                        config,
+                        {"messages": [HumanMessage(content=message), ai_message]}
+                    )
+                    logger.info(f"[_handle_plan] Persisted messages with metadata to checkpoint")
+            except Exception as e:
+                logger.warning(f"[_handle_plan] Failed to persist messages: {e}")
 
         except Exception as e:
             logger.exception(f"Plan execution failed: {e}")
@@ -1410,59 +2156,6 @@ class AIMEPlanner:
                 summary += f"- {link}\n"
 
         return summary
-
-    def _expand_workflow_skill(self, skill_name: str, message: str) -> list[SubtaskSpec]:
-        """Expand a workflow skill into SubtaskSpecs based on its steps.
-
-        Args:
-            skill_name: Name of the workflow skill
-            message: User message for context
-
-        Returns:
-            List of SubtaskSpecs, one per skill step
-        """
-        from backend.skills.registry import WORKFLOW_SKILLS
-
-        workflow_info = WORKFLOW_SKILLS.get(skill_name)
-        if not workflow_info or not workflow_info.steps:
-            # Not a workflow skill or no steps defined
-            return []
-
-        specs: list[SubtaskSpec] = []
-        id_map: dict[str, str] = {}  # step_id -> task_id
-
-        for i, step in enumerate(workflow_info.steps):
-            task_id = str(uuid4())
-            id_map[step.id] = task_id
-
-            # Build dependencies: each step depends on previous step
-            depends_on = []
-            if i > 0:
-                prev_step_id = workflow_info.steps[i - 1].id
-                if prev_step_id in id_map:
-                    depends_on.append(id_map[prev_step_id])
-
-            # Build capabilities from step requirement
-            capabilities = []
-            if step.required_capability:
-                capabilities.append(step.required_capability)
-
-            specs.append(
-                SubtaskSpec(
-                    id=task_id,
-                    description=f"[{skill_name}] {step.description}",
-                    skill_name=skill_name,
-                    skill_step_id=step.id,
-                    capabilities=capabilities,
-                    depends_on=depends_on,
-                    context={"original_message": message},
-                )
-            )
-
-        logger.info(
-            f"Expanded workflow skill '{skill_name}' into {len(specs)} subtasks"
-        )
-        return specs
 
     async def _create_alternative_subtask(
         self, failed_spec: SubtaskSpec, error: str

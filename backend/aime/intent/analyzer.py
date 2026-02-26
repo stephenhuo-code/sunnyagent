@@ -103,8 +103,9 @@ class IntentAnalyzer:
         else:
             context_dict = {}
 
-        # Build message for intent analysis (with simplified context prefix)
-        intent_message = f"{intent_context_str}{message}" if intent_context_str else message
+        # Build message for intent analysis (with simplified context suffix)
+        # Put context AFTER user message so /command prefix is preserved at start
+        intent_message = f"{message}\n\n{intent_context_str.rstrip()}" if intent_context_str else message
 
         # Log entry with message preview and context summary
         context_summary = {k: v for k, v in context_dict.items() if v is not None}

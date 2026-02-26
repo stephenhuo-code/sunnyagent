@@ -16,11 +16,11 @@ from backend.plugins.models import (
     PluginRatingInfo,
     PluginSource,
     PluginType,
-    SkillStepInfo,
     SkillType,
 )
+from backend.commands import get_commands_for_plugin
 from backend.registry import AGENT_REGISTRY, AgentEntry
-from backend.skills.registry import SKILL_REGISTRY, SkillEntry, WORKFLOW_SKILLS
+from backend.skills.registry import SKILL_REGISTRY, SkillEntry
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,28 @@ def _agent_entry_to_plugin_info(
     # Build namespaced name
     plugin_name = f"{source.value}:{entry.name}"
 
+    # Query skills and commands for this agent (package agents only)
+    skills_list: list[PluginInfo] | None = None
+    commands_list: list[str] | None = None
+
+    if source == PluginSource.PACKAGE:
+        # Get skills
+        agent_skill_source = f"package:{entry.name}"
+        matching_skills = [
+            skill for skill in SKILL_REGISTRY.values()
+            if skill.source == agent_skill_source
+        ]
+        if matching_skills:
+            skills_list = [
+                _skill_entry_to_plugin_info(skill, enabled=enabled)
+                for skill in matching_skills
+            ]
+
+        # Get commands
+        matching_commands = get_commands_for_plugin(plugin_name)
+        if matching_commands:
+            commands_list = [cmd.name for cmd in matching_commands]
+
     return PluginInfo(
         name=plugin_name,
         display_name=entry.name.replace("-", " ").replace("_", " ").title(),
@@ -57,7 +79,9 @@ def _agent_entry_to_plugin_info(
         version="1.0.0",
         enabled=enabled,
         capabilities=entry.capabilities if entry.capabilities else None,
+        commands=commands_list,
         rating=rating,
+        skills=skills_list,
     )
 
 
@@ -83,20 +107,7 @@ def _skill_entry_to_plugin_info(
     # Build namespaced name
     plugin_name = f"{source.value}:{entry.name}"
 
-    # Get workflow steps if applicable
-    steps = None
-    skill_type = SkillType.ATOMIC if entry.skill_type == "atomic" else SkillType.WORKFLOW
-    if entry.skill_type == "workflow" and entry.name in WORKFLOW_SKILLS:
-        workflow_info = WORKFLOW_SKILLS[entry.name]
-        steps = [
-            SkillStepInfo(
-                id=step.id,
-                description=step.description,
-                required_capability=step.required_capability,
-            )
-            for step in workflow_info.steps
-        ]
-
+    # All skills are atomic now (workflow skills removed)
     return PluginInfo(
         name=plugin_name,
         display_name=entry.name.replace("-", " ").replace("_", " ").title(),
@@ -105,8 +116,8 @@ def _skill_entry_to_plugin_info(
         description=entry.description,
         version="1.0.0",
         enabled=enabled,
-        skill_type=skill_type,
-        steps=steps,
+        skill_type=SkillType.ATOMIC,
+        steps=None,
         rating=rating,
     )
 
@@ -127,17 +138,33 @@ async def get_all_plugins(
     - Shared plugins (from database)
 
     Applies user's enabled/disabled state from user_plugin_states.
+
+    Note: Package plugins default to disabled and must be explicitly enabled.
+    Preset/built-in plugins default to enabled.
     """
     plugins: list[PluginInfo] = []
 
-    # Get user's disabled plugins from database
+    # Hot-load any newly added packages
+    from backend.agents.loader import scan_and_load_new_packages
+
+    newly_loaded = scan_and_load_new_packages()
+    if newly_loaded:
+        logger.info(f"Hot-loaded {len(newly_loaded)} new packages: {newly_loaded}")
+
+    # Get user's plugin states from database
     disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
+    enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
 
     # 1. Add agents from AGENT_REGISTRY
     for entry in AGENT_REGISTRY.values():
         source = PluginSource.PACKAGE if entry.source == "package" else PluginSource.PRESET
         plugin_name = f"{source.value}:{entry.name}"
-        enabled = plugin_name not in disabled_plugins
+
+        # Package plugins default to disabled, others default to enabled
+        if source == PluginSource.PACKAGE:
+            enabled = plugin_name in enabled_packages
+        else:
+            enabled = plugin_name not in disabled_plugins
 
         # Apply filters
         if source_filter and source != source_filter:
@@ -174,7 +201,12 @@ async def get_all_plugins(
             source = PluginSource.PRESET
 
         plugin_name = f"{source.value}:{entry.name}"
-        enabled = plugin_name not in disabled_plugins
+
+        # Package plugins default to disabled, others default to enabled
+        if source == PluginSource.PACKAGE:
+            enabled = plugin_name in enabled_packages
+        else:
+            enabled = plugin_name not in disabled_plugins
 
         # Apply filters
         if source_filter and source != source_filter:
@@ -258,9 +290,15 @@ async def get_plugin(user_id: UUID, plugin_name: str) -> PluginInfo | None:
     except ValueError:
         return None
 
-    # Get user's disabled state
-    disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
-    enabled = plugin_name not in disabled_plugins
+    # Determine enabled state based on source
+    if source == PluginSource.PACKAGE:
+        # Package plugins default to disabled
+        enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
+        enabled = plugin_name in enabled_packages
+    else:
+        # Other plugins default to enabled
+        disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
+        enabled = plugin_name not in disabled_plugins
 
     # Look up in registries based on source and type
     # Check AGENT_REGISTRY first
@@ -311,6 +349,7 @@ async def get_marketplace_plugins(
     """
     plugins: list[PluginInfo] = []
     disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
+    enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
 
     # 1. Add preset/package agents
     for entry in AGENT_REGISTRY.values():
@@ -320,7 +359,12 @@ async def get_marketplace_plugins(
             continue
 
         plugin_name = f"{source.value}:{entry.name}"
-        enabled = plugin_name not in disabled_plugins
+
+        # Package plugins default to disabled, others default to enabled
+        if source == PluginSource.PACKAGE:
+            enabled = plugin_name in enabled_packages
+        else:
+            enabled = plugin_name not in disabled_plugins
 
         rating = None
         if source == PluginSource.PACKAGE:
@@ -352,7 +396,12 @@ async def get_marketplace_plugins(
             continue
 
         plugin_name = f"{source.value}:{entry.name}"
-        enabled = plugin_name not in disabled_plugins
+
+        # Package plugins default to disabled, others default to enabled
+        if source == PluginSource.PACKAGE:
+            enabled = plugin_name in enabled_packages
+        else:
+            enabled = plugin_name not in disabled_plugins
 
         rating = None
         if source == PluginSource.PACKAGE:
@@ -444,10 +493,17 @@ async def get_enabled_plugins_for_user(user_id: UUID) -> list[PluginInfo]:
 async def is_plugin_enabled(user_id: UUID, plugin_name: str) -> bool:
     """Check if a plugin is enabled for a user.
 
-    By default, plugins are enabled unless explicitly disabled.
+    Package plugins default to disabled and must be explicitly enabled.
+    Other plugins default to enabled unless explicitly disabled.
     """
-    disabled = await plugin_db.get_disabled_plugin_names(user_id)
-    return plugin_name not in disabled
+    if plugin_name.startswith("package:"):
+        # Package plugins must be explicitly enabled
+        enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
+        return plugin_name in enabled_packages
+    else:
+        # Other plugins default to enabled
+        disabled = await plugin_db.get_disabled_plugin_names(user_id)
+        return plugin_name not in disabled
 
 
 # =============================================================================

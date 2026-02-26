@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from backend.aime.intent.models import IntentResult
+from backend.commands import COMMAND_REGISTRY
 from backend.registry import AGENT_REGISTRY
 
 from .base import ClassifierBase
@@ -16,8 +17,8 @@ class RuleBasedClassifier(ClassifierBase):
     """Rule-based classifier for explicit routing patterns.
 
     Detects:
+    - /command - User-invocable commands (highest priority)
     - [ROUTE_TO: agent_name] - Explicit agent routing
-    - [SKILL: skill_name] - Skill invocation (future)
 
     Priority: 0 (highest - explicit user instructions)
     """
@@ -44,9 +45,31 @@ class RuleBasedClassifier(ClassifierBase):
             domain: Optional domain hint
 
         Returns:
-            IntentResult with delegate action if explicit routing found
+            IntentResult with appropriate action type
         """
         logger.debug(f"[rule_based] Checking - message='{message[:50]}...'")
+
+        # Check for /command pattern first (highest priority)
+        if message.startswith("/"):
+            parts = message.split(maxsplit=1)
+            command_name = parts[0][1:]  # Remove leading "/"
+
+            if command_name in COMMAND_REGISTRY:
+                command = COMMAND_REGISTRY[command_name]
+                logger.info(
+                    f"[rule_based] Matched /command pattern -> "
+                    f"command={command_name}, plugin={command.plugin_name}"
+                )
+                return IntentResult(
+                    action="command",
+                    confidence=1.0,
+                    command_name=command_name,
+                    plugin_name=command.plugin_name,
+                    domain=domain or "general",
+                )
+            else:
+                logger.debug(f"[rule_based] Unknown command: /{command_name}")
+                # Fall through to other classifiers
 
         # Check context for frontend-selected agent
         if context and context.get("explicit_agent"):
@@ -73,20 +96,6 @@ class RuleBasedClassifier(ClassifierBase):
                     domain=domain or "general",
                 )
             # Agent not found - fall through to other classifiers
-
-        # Check for [SKILL: skill_name] pattern (for US4 skill integration)
-        skill_match = re.search(r"\[SKILL:\s*([\w-]+)\]", message, re.IGNORECASE)
-        if skill_match:
-            skill_name = skill_match.group(1).lower()
-            logger.info(f"[rule_based] Matched [SKILL:] pattern -> skill={skill_name}")
-            # Skills trigger delegate to generic actor with skill context
-            return IntentResult(
-                action="delegate",
-                confidence=1.0,
-                capabilities=["skill_execution"],
-                domain=domain or "general",
-                # Note: skill_name will be handled by Planner
-            )
 
         # No explicit routing found
         return None

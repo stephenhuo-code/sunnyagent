@@ -1,25 +1,31 @@
 /**
- * Plugins management page - integrates sidebar and detail panel.
+ * Plugins management page - integrates sidebar, middle panel and detail panel.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { PluginSidebar } from "../components/Plugins/PluginSidebar";
+import { PluginMiddlePanel } from "../components/Plugins/PluginMiddlePanel";
 import { PluginDetail } from "../components/Plugins/PluginDetail";
 import { BrowsePluginsModal } from "../components/Plugins/BrowsePluginsModal";
 import { UploadPluginModal } from "../components/Plugins/UploadPluginModal";
-import type { PluginInfo } from "../types/plugins";
+import type { CommandDetail, PluginInfo } from "../types/plugins";
 import {
   listPlugins,
   updatePluginState,
   ratePlugin,
   deletePlugin,
   sharePlugin,
+  getCommandDetail,
 } from "../api/plugins";
 import "../components/Plugins/Plugins.css";
 
 export function PluginsPage() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [selectedPlugin, setSelectedPlugin] = useState<PluginInfo | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<"commands" | "skills" | null>(null);
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [commandDetail, setCommandDetail] = useState<CommandDetail | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<PluginInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,9 +50,45 @@ export function PluginsPage() {
     loadPlugins();
   }, [loadPlugins]);
 
-  // Handle plugin selection
+  // Handle plugin selection (clicking on the agent itself)
   const handleSelectPlugin = (plugin: PluginInfo) => {
     setSelectedPlugin(plugin);
+    setSelectedCategory(null);
+    setSelectedItem(null);
+    setCommandDetail(null);
+    setSelectedSkill(null);
+  };
+
+  // Handle category selection (Commands or Skills)
+  const handleSelectCategory = (plugin: PluginInfo, category: "commands" | "skills") => {
+    setSelectedPlugin(plugin);
+    setSelectedCategory(category);
+    setSelectedItem(null);
+    setCommandDetail(null);
+    setSelectedSkill(null);
+  };
+
+  // Handle command selection in middle panel
+  const handleSelectCommand = async (name: string) => {
+    setSelectedItem(name);
+    setSelectedSkill(null);
+    setDetailLoading(true);
+    try {
+      const detail = await getCommandDetail(name);
+      setCommandDetail(detail);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load command details");
+      setCommandDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Handle skill selection in middle panel
+  const handleSelectSkillItem = (skill: PluginInfo) => {
+    setSelectedItem(skill.name);
+    setCommandDetail(null);
+    setSelectedSkill(skill);
   };
 
   // Handle enable/disable toggle
@@ -54,12 +96,12 @@ export function PluginsPage() {
     try {
       setDetailLoading(true);
       const updated = await updatePluginState(plugin.name, { enabled });
-      // Update local state
+      // Update local state with full backend response (includes updated nested skills)
       setPlugins((prev) =>
-        prev.map((p) => (p.name === plugin.name ? { ...p, enabled: updated.enabled } : p))
+        prev.map((p) => (p.name === plugin.name ? updated : p))
       );
       if (selectedPlugin?.name === plugin.name) {
-        setSelectedPlugin({ ...selectedPlugin, enabled: updated.enabled });
+        setSelectedPlugin(updated);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update plugin state");
@@ -150,6 +192,9 @@ export function PluginsPage() {
     loadPlugins();
   };
 
+  // Determine if we should show three-column layout
+  const showMiddlePanel = selectedPlugin && selectedCategory;
+
   return (
     <div className="plugins-page">
       {error && (
@@ -159,17 +204,30 @@ export function PluginsPage() {
         </div>
       )}
 
-      <div className="plugins-layout">
+      <div className={`plugins-layout ${showMiddlePanel ? "three-columns" : ""}`}>
         <PluginSidebar
           plugins={plugins}
           selectedPlugin={selectedPlugin}
+          selectedCategory={selectedCategory}
           onSelectPlugin={handleSelectPlugin}
+          onSelectCategory={handleSelectCategory}
           onAddClick={handleAddClick}
           loading={loading}
         />
 
+        {showMiddlePanel && (
+          <PluginMiddlePanel
+            plugin={selectedPlugin}
+            category={selectedCategory}
+            selectedItem={selectedItem}
+            onSelectCommand={handleSelectCommand}
+            onSelectSkill={handleSelectSkillItem}
+          />
+        )}
+
         <PluginDetail
-          plugin={selectedPlugin}
+          plugin={selectedSkill || (selectedCategory ? null : selectedPlugin)}
+          commandDetail={commandDetail}
           onToggleEnabled={handleToggleEnabled}
           onShare={handleShare}
           onDelete={handleDelete}

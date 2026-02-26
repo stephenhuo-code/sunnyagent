@@ -36,9 +36,9 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 
-# 创建工作目录和输出目录
+# 创建工作目录、输入目录和输出目录
 WORKDIR /workspace
-RUN mkdir -p /output && chmod 777 /output
+RUN mkdir -p /output /input && chmod 777 /output /input
 
 # 保持容器运行（用于容器池）
 CMD ["sleep", "infinity"]

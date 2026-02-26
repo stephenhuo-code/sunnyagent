@@ -73,6 +73,7 @@ export function SourcesPanel({
 }: SourcesPanelProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -109,8 +110,21 @@ export function SourcesPanel({
     }
   }, [projectId, onUploadFile]);
 
+  const handleMenuOpen = (e: React.MouseEvent, fileId: string) => {
+    e.stopPropagation();
+    if (menuOpenId === fileId) {
+      setMenuOpenId(null);
+      setMenuPosition(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setMenuPosition({ x: rect.left, y: rect.bottom + 4 });
+      setMenuOpenId(fileId);
+    }
+  };
+
   const handleDelete = async (fileId: string) => {
     setMenuOpenId(null);
+    setMenuPosition(null);
     if (window.confirm('确定要删除这个文件吗？')) {
       setDeletingIds((prev) => new Set(prev).add(fileId));
       try {
@@ -127,6 +141,7 @@ export function SourcesPanel({
 
   const handleStartRename = (file: ProjectFile) => {
     setMenuOpenId(null);
+    setMenuPosition(null);
     setRenamingId(file.file_id);
     setRenameValue(file.original_name);
     setRenameError(null);
@@ -186,8 +201,9 @@ export function SourcesPanel({
     const handleClickOutside = (e: MouseEvent) => {
       if (menuOpenId) {
         const target = e.target as Element;
-        if (!target.closest('.source-menu-wrapper')) {
+        if (!target.closest('.source-menu-wrapper') && !target.closest('.source-menu')) {
           setMenuOpenId(null);
+          setMenuPosition(null);
         }
       }
     };
@@ -317,17 +333,17 @@ export function SourcesPanel({
                   <div className="source-menu-wrapper">
                     <button
                       className="source-more-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuOpenId(menuOpenId === file.file_id ? null : file.file_id);
-                      }}
+                      onClick={(e) => handleMenuOpen(e, file.file_id)}
                       disabled={isDeleting || isRenaming}
                       title="更多选项"
                     >
                       {isDeleting ? <Loader2 size={14} className="spin" /> : <MoreVertical size={14} />}
                     </button>
-                    {menuOpenId === file.file_id && (
-                      <div className="source-menu">
+                    {menuOpenId === file.file_id && menuPosition && (
+                      <div
+                        className="source-menu"
+                        style={{ left: menuPosition.x, top: menuPosition.y }}
+                      >
                         <button onClick={() => handleStartRename(file)}>
                           <Pencil size={14} />
                           <span>重命名</span>

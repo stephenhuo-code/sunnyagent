@@ -29,10 +29,13 @@ class PluginType(str, Enum):
 
 
 class SkillType(str, Enum):
-    """Skill execution types."""
+    """Skill execution types.
+
+    Note: Only ATOMIC is supported. WORKFLOW is deprecated.
+    """
 
     ATOMIC = "atomic"
-    WORKFLOW = "workflow"
+    WORKFLOW = "workflow"  # Deprecated, kept for API compatibility
 
 
 # =============================================================================
@@ -40,8 +43,19 @@ class SkillType(str, Enum):
 # =============================================================================
 
 
+class CommandInfo(BaseModel):
+    """Command information for API responses."""
+
+    name: str  # Command name (without /)
+    description: str
+    argument_hint: str = ""
+
+
 class SkillStepInfo(BaseModel):
-    """A single step in a workflow skill."""
+    """A single step in a workflow skill.
+
+    Deprecated: Workflow skills are no longer supported.
+    """
 
     id: str
     description: str

@@ -10,13 +10,14 @@ from typing import Literal
 # Type Definitions
 # =============================================================================
 
-Action = Literal["direct_reply", "delegate", "plan", "clarify"]
+Action = Literal["direct_reply", "delegate", "plan", "clarify", "command"]
 """
 Action types that determine Planner behavior:
 - direct_reply: Simple question, respond directly without tools
 - delegate: Single task, route to specialist agent
 - plan: Complex task, decompose into multiple subtasks
 - clarify: Unclear intent, ask user for clarification
+- command: User invoked a /command, execute its workflow
 """
 
 
@@ -36,6 +37,8 @@ class IntentResult:
         domain: Domain identifier (for future extension)
         clarify_questions: Questions to ask when action is 'clarify'
         explicit_agent: User-specified agent name (from [ROUTE_TO: xxx])
+        command_name: Command name when action is 'command' (e.g., "analyze")
+        plugin_name: Plugin name for permission check (e.g., "package:data")
     """
 
     action: Action
@@ -44,6 +47,8 @@ class IntentResult:
     domain: str = "general"
     clarify_questions: list[str] | None = None
     explicit_agent: str | None = None
+    command_name: str | None = None
+    plugin_name: str | None = None
 
 
 # =============================================================================

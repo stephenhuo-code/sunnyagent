@@ -90,6 +90,8 @@ export function ProjectWorkspace({
           key={`project-${projectId}-${threadId || 'new'}`}
           initialThreadId={threadId}
           selectedFileIds={selectedFileIds}
+          projectFiles={files}
+          onToggleFileSelection={onToggleFileSelection}
           projectContext={{
             projectId,
             projectName,
@@ -97,6 +99,7 @@ export function ProjectWorkspace({
           }}
           onConversationCreated={onConversationCreated}
           initialMessage={initialMessage}
+          onUploadToProject={onUploadFile}
         />
       </div>
     </div>

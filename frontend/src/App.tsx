@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { useConversations } from "./hooks/useConversations";
 import { useProjects } from "./hooks/useProjects";
-import { useSkills } from "./hooks/useSkills";
 import { LoginPage } from "./components/Auth/LoginPage";
 import { MainLayout } from "./components/Layout/MainLayout";
 import { ConversationList } from "./components/Conversations";
@@ -12,6 +11,8 @@ import { ProjectList, ProjectHome, ProjectWorkspace } from "./components/Project
 import { PluginsPage } from "./pages/PluginsPage";
 import { Loader2, X } from "lucide-react";
 import { getConversation } from "./api/conversations";
+import { getCommands } from "./api/client";
+import type { Command } from "./types";
 
 type View = "chat" | "project";
 
@@ -27,8 +28,22 @@ function AppContent() {
 
   const conversations = useConversations();
   const projects = useProjects();
-  const { skills } = useSkills();
+  const [commands, setCommands] = useState<Command[]>([]);
   const [createProjectTrigger, setCreateProjectTrigger] = useState(0);
+
+  // Fetch commands from enabled plugins
+  const refreshCommands = useCallback(async () => {
+    try {
+      const cmds = await getCommands();
+      setCommands(cmds);
+    } catch {
+      // Silently fail - commands will be empty
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCommands();
+  }, [refreshCommands]);
 
   // Close modals on Escape key
   useEffect(() => {
@@ -261,6 +276,12 @@ function AppContent() {
     setShowPluginsModal(true);
   }, []);
 
+  // Handle closing plugins modal and refresh commands
+  const handleClosePluginsModal = useCallback(() => {
+    setShowPluginsModal(false);
+    refreshCommands();
+  }, [refreshCommands]);
+
   if (isLoading) {
     return (
       <div className="loading-screen">
@@ -348,7 +369,7 @@ function AppContent() {
               files={projects.files}
               conversations={projects.getConversations(currentProject.id)}
               conversationsLoading={projects.isConversationsLoading(currentProject.id)}
-              skills={skills}
+              commands={commands}
               onCreateConversation={handleCreateConversationFromHome}
               onSelectConversation={(convId) => handleProjectConversationSelect(convId, currentProject.id)}
               onUploadFile={handleUploadFileFromHome}
@@ -394,11 +415,11 @@ function AppContent() {
 
       {/* Plugins Modal */}
       {showPluginsModal && (
-        <div className="plugins-modal-overlay" onClick={() => setShowPluginsModal(false)}>
+        <div className="plugins-modal-overlay" onClick={handleClosePluginsModal}>
           <div className="plugins-modal-container" onClick={(e) => e.stopPropagation()}>
             <button
               className="plugins-modal-close"
-              onClick={() => setShowPluginsModal(false)}
+              onClick={handleClosePluginsModal}
               aria-label="Close plugins panel"
             >
               <X size={20} />

@@ -9,7 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import Markdown from "react-markdown";
+import SafeMarkdown from "./SafeMarkdown";
 import type { ToolCall } from "../types";
 
 interface ToolCallCardProps {
@@ -66,7 +66,7 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
       </div>
       {expanded && toolCall.output && (
         <div className="tool-call-output">
-          <Markdown>{toolCall.output.slice(0, 3000)}</Markdown>
+          <SafeMarkdown maxLength={3000}>{toolCall.output}</SafeMarkdown>
         </div>
       )}
     </div>

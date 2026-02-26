@@ -492,3 +492,152 @@ def load_agent_from_directory(
 9. 插件评分 API
 10. 分享/取消分享 API
 11. Workflow Skill 增强（/command 触发）
+
+---
+
+## 13. Package 热加载架构
+
+### Decision: 启动时全量加载 + 运行时扫描新 Package
+
+**Rationale**:
+- 启动时加载所有现有 packages，确保服务可用
+- 运行时支持热添加新 package，无需重启
+- Package 默认禁用，用户需手动启用
+
+### 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    服务启动                                  │
+│   load_package_agents()  ← 加载所有现有 packages             │
+│   所有 agents/skills 注册到全局 REGISTRY                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              全局 REGISTRY（所有用户共享）                    │
+│   AGENT_REGISTRY: { "content-writer": agent, ... }          │
+│   SKILL_REGISTRY: { "blog-post": skill, ... }               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┴────────────────────┐
+         ▼                                         ▼
+┌─────────────────────────┐          ┌─────────────────────────┐
+│   用户打开插件页面       │          │   用户发消息             │
+│         ↓               │          │         ↓               │
+│   GET /api/plugins      │          │   POST /api/chat        │
+│         ↓               │          │         ↓               │
+│   scan_and_load_new()   │          │   AIME 检查用户启用状态  │
+│   发现新 package → 加载  │          │   过滤可用 agents       │
+└─────────────────────────┘          └─────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    数据库（per-user 状态）                   │
+│   user_plugin_states:                                       │
+│     用户 A: { "package:content-writer": enabled=true }      │
+│     用户 B: { "package:content-writer": enabled=false }     │
+│                                                             │
+│   Package 默认禁用，需明确启用记录才可用                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 热加载函数设计
+
+**backend/agents/loader.py**:
+
+```python
+# 记录已加载的 package 名称
+_LOADED_PACKAGES: set[str] = set()
+
+def scan_and_load_new_packages() -> list[str]:
+    """扫描 packages/ 目录，加载新发现的 packages。
+
+    Returns:
+        新加载的 package 名称列表
+    """
+    if not _PACKAGES_DIR.is_dir():
+        return []
+
+    newly_loaded = []
+    for pkg_dir in sorted(_PACKAGES_DIR.iterdir()):
+        if not pkg_dir.is_dir():
+            continue
+
+        agents_md = pkg_dir / "AGENTS.md"
+        if not agents_md.exists():
+            continue
+
+        # 解析 frontmatter 获取 agent name
+        frontmatter = _parse_agents_md_frontmatter(agents_md)
+        name = str(frontmatter.get("name", pkg_dir.name))
+
+        # 跳过已加载的
+        if name in _LOADED_PACKAGES:
+            continue
+
+        # 加载新 package
+        _register_package(pkg_dir)
+        _LOADED_PACKAGES.add(name)
+        newly_loaded.append(name)
+
+    return newly_loaded
+```
+
+### Package 默认禁用逻辑
+
+**backend/plugins/database.py**:
+
+```python
+async def get_enabled_package_plugins(user_id: UUID) -> set[str]:
+    """获取用户明确启用的 package 插件。
+
+    Package 类型默认禁用，只返回明确启用的。
+    """
+    query = """
+        SELECT plugin_name FROM user_plugin_states
+        WHERE user_id = $1 AND plugin_name LIKE 'package:%' AND enabled = TRUE
+    """
+    rows = await fetch_all(query, user_id)
+    return {row["plugin_name"] for row in rows}
+```
+
+**backend/plugins/service.py**:
+
+```python
+async def get_all_plugins(...) -> list[PluginInfo]:
+    # 热加载新 packages
+    from backend.agents.loader import scan_and_load_new_packages
+    newly_loaded = scan_and_load_new_packages()
+
+    # 获取用户明确启用的 package 插件
+    enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
+
+    for entry in AGENT_REGISTRY.values():
+        plugin_name = f"{entry.source}:{entry.name}"
+
+        # Package 默认禁用，其他类型默认启用
+        if entry.source == "package":
+            enabled = plugin_name in enabled_packages
+        else:
+            enabled = plugin_name not in disabled_plugins
+
+        # ... 构建 PluginInfo ...
+```
+
+### 关键设计决策
+
+| 决策点 | 选择 | 理由 |
+|--------|------|------|
+| 注册表数量 | 全局共享一份 | 代码共享，per-user 状态靠数据库 |
+| 加载时机 | 启动 + 打开插件页时 | 平衡启动速度和热加载需求 |
+| Package 默认状态 | 禁用 | 用户明确意图，避免新 package 自动生效 |
+| Skills 跟随 Agent | 是 | Agent 启用时其 skills 同步可用 |
+
+### 修改文件清单
+
+| 文件 | 修改内容 |
+|------|----------|
+| `backend/agents/loader.py` | 新增 `scan_and_load_new_packages()`，`_LOADED_PACKAGES` 集合 |
+| `backend/plugins/service.py` | 调用热加载函数，修改 Package 默认禁用逻辑 |
+| `backend/plugins/database.py` | 新增 `get_enabled_package_plugins()` 函数 |

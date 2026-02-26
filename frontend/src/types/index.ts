@@ -13,6 +13,14 @@ export interface Skill {
   skill_type?: "atomic" | "workflow";
 }
 
+/** A user-invocable command from enabled plugins */
+export interface Command {
+  name: string;
+  description: string;
+  argument_hint: string;
+  plugin_name: string;
+}
+
 /** Todo item from DeepAgents TodoListMiddleware */
 export interface Todo {
   content: string;

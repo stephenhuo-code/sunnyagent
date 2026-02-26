@@ -15,7 +15,11 @@ from backend.aime.models import Actor, SubtaskSpec
 from backend.llm import get_model
 from backend.skills import SKILL_REGISTRY, get_skill_summaries
 from backend.tools.file_tools import read_file
-from backend.tools.sandbox import execute_python, execute_python_with_file
+from backend.tools.sandbox import (
+    execute_python,
+    execute_python_with_file,
+    execute_python_with_input,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +31,42 @@ _GENERIC_SYSTEM_PROMPT = """\
 
 ## 能力
 
-1. **代码执行**：使用 execute_python 或 execute_python_with_file 运行 Python 代码
-2. **文件读取**：使用 read_file 读取文件（支持上传文件和项目文件）
-   - 上传文件：read_file(file_id="...")
-   - 项目文件：read_file(file_id="...", project_id="...")
+1. **代码执行**：
+   - `execute_python`: 执行简单 Python 代码（无文件输入）
+   - `execute_python_with_input`: 执行代码并处理输入文件（支持上传文件和项目文件）
+     - 文件会被复制到容器的 `/input/` 目录
+     - 可直接使用 `pd.read_csv('/input/文件名.csv')` 读取
+     - 参数 `project_id`: 如果是项目文件，必须提供此参数
+     - 可选参数 `output_filename` 用于生成可下载文件
+   - `execute_python_with_file`: 执行代码并生成可下载文件（无输入文件）
+
+2. **文件读取**：使用 read_file 预览文件内容
+   - 返回文本内容（用于查看文件结构）
+   - 大文件数据处理请使用 execute_python_with_input
+
 3. **技能激活**：使用 activate_skill 加载专业指令
+
+## 处理用户文件的正确模式
+
+1. **查看上下文中的 [可用文件] 获取 file_id（和 project_id）**
+2. **使用 execute_python_with_input 工具**：
+   - `input_file_ids`: 文件 ID 列表
+   - `project_id`: 如果是项目文件，必须提供项目 ID
+   - `code`: 使用 `/input/{{原始文件名}}` 路径访问文件
+
+示例：
+```python
+# 如果上下文显示：数据.csv (file_id: abc123, project_id: proj-456)
+# 工具参数：
+# input_file_ids: ["abc123"]
+# project_id: "proj-456"
+# code:
+import pandas as pd
+df = pd.read_csv('/input/数据.csv')
+print(df.describe())
+# 如果需要输出文件：
+df.to_excel('/output/result.xlsx', index=False)
+```
 
 ## 可用技能
 
@@ -84,6 +119,7 @@ def create_generic_actor(spec: SubtaskSpec | None = None) -> Actor:
     # Standard tools for generic actor
     tools = [
         execute_python,
+        execute_python_with_input,
         execute_python_with_file,
         read_file,  # Unified file reading tool
         activate_skill,

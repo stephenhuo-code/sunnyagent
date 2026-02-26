@@ -104,3 +104,15 @@ export interface MarketplaceParams {
   search?: string;
   sort?: "name" | "rating" | "recent";
 }
+
+// =============================================================================
+// Command Detail Types
+// =============================================================================
+
+export interface CommandDetail {
+  name: string;
+  description: string;
+  argument_hint: string;
+  plugin_name: string;
+  content: string; // Full markdown workflow content
+}

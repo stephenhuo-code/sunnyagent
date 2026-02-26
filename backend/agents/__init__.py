@@ -13,6 +13,13 @@ load_all_skills()
 
 from backend.agents import research, sql  # noqa: F401
 from backend.agents.loader import load_package_agents
+from backend.agents.package_agent import create_package_agent, create_package_tools
 
 # Load downloaded agent packages
 load_package_agents()
+
+__all__ = [
+    "create_package_agent",
+    "create_package_tools",
+    "load_package_agents",
+]

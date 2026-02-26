@@ -17,6 +17,37 @@ Key design principle:
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+
+from backend.core.storage import get_project_files_dir, get_temp_files_dir
+
+
+def _get_container_path(storage_path: str) -> str:
+    """将存储路径转换为容器内路径显示。
+
+    Args:
+        storage_path: 主机上的存储路径
+
+    Returns:
+        容器内路径，如果无法转换则返回原路径
+    """
+    path = Path(storage_path)
+
+    # 项目文件
+    try:
+        relative = path.relative_to(get_project_files_dir())
+        return f"/data/project_files/{relative}"
+    except ValueError:
+        pass
+
+    # 临时文件
+    try:
+        relative = path.relative_to(get_temp_files_dir())
+        return f"/data/tmp/{relative}"
+    except ValueError:
+        pass
+
+    return storage_path  # fallback
 
 
 @dataclass
@@ -31,11 +62,13 @@ class FileInfo:
         filename: Original filename for display
         file_type: File type (pdf, excel, word, text, markdown, etc.)
         project_id: Project ID if this is a project file (None for uploads)
+        storage_path: Absolute path to the file on disk
     """
     file_id: str
     filename: str
     file_type: str
     project_id: str | None = None
+    storage_path: str | None = None
 
 
 @dataclass
@@ -74,7 +107,7 @@ class FileContext:
         """Generate file prompt for LLM.
 
         Returns:
-            Formatted prompt listing available files with read_file tool hints.
+            Formatted prompt listing available files with tool hints.
             Empty string if no files.
         """
         if not self.files:
@@ -82,17 +115,20 @@ class FileContext:
 
         lines = ["[可用文件]"]
         for f in self.files:
-            if f.project_id:
-                lines.append(
-                    f"- {f.filename} (类型: {f.file_type}) "
-                    f'→ read_file(file_id="{f.file_id}", project_id="{f.project_id}")'
-                )
-            else:
-                lines.append(
-                    f"- {f.filename} (类型: {f.file_type}) "
-                    f'→ read_file(file_id="{f.file_id}")'
-                )
-        lines.append("\n使用 read_file 工具读取文件内容。")
+            # 显示两个路径：主机路径（用于 read_file）和容器路径（用于 execute_python）
+            container_path = _get_container_path(f.storage_path) if f.storage_path else "N/A"
+            lines.append(f"- {f.filename}")
+            lines.append(f"  - 类型: {f.file_type}")
+            lines.append(f"  - 主机路径: {f.storage_path}")
+            lines.append(f"  - 容器路径: {container_path}")
+
+        lines.append("")
+        lines.append("**文件使用方式**:")
+        lines.append("- 读取文件内容: `read_file(file_path=\"主机路径\")`")
+        lines.append("- Python 数据处理: `execute_python_with_input(input_file_paths=[\"主机路径\"], code=...)`")
+        lines.append("  - 代码中使用容器路径读取，例如:")
+        lines.append("    `df = pd.read_csv('容器路径')`")
+
         return "\n".join(lines)
 
 

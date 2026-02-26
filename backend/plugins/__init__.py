@@ -8,6 +8,7 @@ This module provides:
 """
 
 from backend.plugins.models import (
+    CommandInfo,
     PluginInfo,
     PluginRatingInfo,
     PluginRatingRequest,
@@ -20,6 +21,7 @@ from backend.plugins.models import (
 )
 
 __all__ = [
+    "CommandInfo",
     "PluginInfo",
     "PluginRatingInfo",
     "PluginRatingRequest",
