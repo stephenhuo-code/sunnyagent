@@ -4,6 +4,11 @@ Provides business logic for:
 - Listing plugins from all sources (preset, package, uploaded, shared)
 - Managing user plugin states (enable/disable)
 - Merging registry data with database state
+
+Data Sources:
+- AGENT_REGISTRY: Built-in agents (preset) - NO version/author from plugin.json
+- PLUGIN_REGISTRY: Package plugins - HAS version/author from plugin.json
+- Database: Uploaded/shared plugins
 """
 
 import logging
@@ -18,6 +23,7 @@ from backend.plugins.models import (
     PluginType,
     SkillType,
 )
+from backend.plugins.registry import PLUGIN_REGISTRY, PluginEntry
 from backend.commands import get_commands_for_plugin
 from backend.registry import AGENT_REGISTRY, AgentEntry
 from backend.skills.registry import SKILL_REGISTRY, SkillEntry
@@ -35,7 +41,11 @@ def _agent_entry_to_plugin_info(
     enabled: bool = True,
     rating: PluginRatingInfo | None = None,
 ) -> PluginInfo:
-    """Convert an AgentEntry to PluginInfo."""
+    """Convert an AgentEntry (built-in agent) to PluginInfo.
+
+    Note: Built-in agents don't have version/author from plugin.json.
+    These are hardcoded as they're part of the codebase.
+    """
     # Determine source from entry.source
     source_map = {
         "preset": PluginSource.PRESET,
@@ -48,35 +58,55 @@ def _agent_entry_to_plugin_info(
     # Build namespaced name
     plugin_name = f"{source.value}:{entry.name}"
 
-    # Query skills and commands for this agent (package agents only)
-    skills_list: list[PluginInfo] | None = None
-    commands_list: list[str] | None = None
-
-    if source == PluginSource.PACKAGE:
-        # Get skills
-        agent_skill_source = f"package:{entry.name}"
-        matching_skills = [
-            skill for skill in SKILL_REGISTRY.values()
-            if skill.source == agent_skill_source
-        ]
-        if matching_skills:
-            skills_list = [
-                _skill_entry_to_plugin_info(skill, enabled=enabled)
-                for skill in matching_skills
-            ]
-
-        # Get commands
-        matching_commands = get_commands_for_plugin(plugin_name)
-        if matching_commands:
-            commands_list = [cmd.name for cmd in matching_commands]
-
     return PluginInfo(
         name=plugin_name,
         display_name=entry.name.replace("-", " ").replace("_", " ").title(),
         type=PluginType.AGENT,
         source=source,
         description=entry.description,
-        version="1.0.0",
+        version="1.0.0",  # Hardcoded for built-in agents
+        author=None,      # Built-in agents don't have author field
+        enabled=enabled,
+        capabilities=entry.capabilities if entry.capabilities else None,
+        commands=None,
+        rating=rating,
+        skills=None,
+    )
+
+
+def _plugin_entry_to_plugin_info(
+    entry: PluginEntry,
+    enabled: bool = True,
+    rating: PluginRatingInfo | None = None,
+) -> PluginInfo:
+    """Convert a PluginEntry (package plugin) to PluginInfo.
+
+    Uses version/author from plugin.json.
+    """
+    plugin_name = f"package:{entry.name}"
+
+    # Get skills for this plugin
+    matching_skills = [
+        skill for skill in SKILL_REGISTRY.values()
+        if skill.source == plugin_name
+    ]
+    skills_list = [
+        _skill_entry_to_plugin_info(s, enabled=enabled)
+        for s in matching_skills
+    ] if matching_skills else None
+
+    # Get commands
+    matching_commands = get_commands_for_plugin(plugin_name)
+    commands_list = [cmd.name for cmd in matching_commands] if matching_commands else None
+
+    return PluginInfo(
+        name=plugin_name,
+        display_name=entry.name.replace("-", " ").replace("_", " ").title(),
+        type=PluginType.AGENT,
+        source=PluginSource.PACKAGE,
+        description=entry.description,
+        version=entry.version,   # From plugin.json
+        author=entry.author,     # From plugin.json
         enabled=enabled,
         capabilities=entry.capabilities if entry.capabilities else None,
         commands=commands_list,
@@ -132,8 +162,9 @@ async def get_all_plugins(
     """Get all plugins visible to the user.
 
     Merges:
-    - AGENT_REGISTRY (preset, package)
-    - SKILL_REGISTRY (preset, custom, package)
+    - AGENT_REGISTRY (preset agents only - built-in)
+    - PLUGIN_REGISTRY (package plugins - from packages/ directory)
+    - SKILL_REGISTRY (preset, custom, package skills)
     - Uploaded plugins (from database)
     - Shared plugins (from database)
 
@@ -145,7 +176,7 @@ async def get_all_plugins(
     plugins: list[PluginInfo] = []
 
     # Hot-load any newly added packages
-    from backend.agents.loader import scan_and_load_new_packages
+    from backend.plugins.package_loader import scan_and_load_new_packages
 
     newly_loaded = scan_and_load_new_packages()
     if newly_loaded:
@@ -155,19 +186,17 @@ async def get_all_plugins(
     disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
     enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
 
-    # 1. Add agents from AGENT_REGISTRY
+    # 1. Add built-in agents from AGENT_REGISTRY (preset only)
     for entry in AGENT_REGISTRY.values():
-        source = PluginSource.PACKAGE if entry.source == "package" else PluginSource.PRESET
-        plugin_name = f"{source.value}:{entry.name}"
+        # Only include preset agents here (package plugins come from PLUGIN_REGISTRY)
+        if entry.source != "preset":
+            continue
 
-        # Package plugins default to disabled, others default to enabled
-        if source == PluginSource.PACKAGE:
-            enabled = plugin_name in enabled_packages
-        else:
-            enabled = plugin_name not in disabled_plugins
+        plugin_name = f"preset:{entry.name}"
+        enabled = plugin_name not in disabled_plugins
 
         # Apply filters
-        if source_filter and source != source_filter:
+        if source_filter and source_filter != PluginSource.PRESET:
             continue
         if type_filter and type_filter != PluginType.AGENT:
             continue
@@ -175,6 +204,34 @@ async def get_all_plugins(
             continue
 
         plugin = _agent_entry_to_plugin_info(entry, enabled=enabled)
+
+        # Apply search
+        if search:
+            search_lower = search.lower()
+            if (
+                search_lower not in plugin.name.lower()
+                and search_lower not in plugin.display_name.lower()
+                and search_lower not in plugin.description.lower()
+            ):
+                continue
+
+        plugins.append(plugin)
+
+    # 2. Add package plugins from PLUGIN_REGISTRY
+    for entry in PLUGIN_REGISTRY.values():
+        plugin_name = f"package:{entry.name}"
+        enabled = plugin_name in enabled_packages
+
+        # Apply filters
+        if source_filter and source_filter != PluginSource.PACKAGE:
+            continue
+        if type_filter and type_filter != PluginType.AGENT:
+            continue
+        if enabled_filter is not None and enabled != enabled_filter:
+            continue
+
+        rating = await plugin_db.get_plugin_rating_info(plugin_name)
+        plugin = _plugin_entry_to_plugin_info(entry, enabled=enabled, rating=rating)
 
         # Apply search
         if search:
@@ -300,8 +357,13 @@ async def get_plugin(user_id: UUID, plugin_name: str) -> PluginInfo | None:
         disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
         enabled = plugin_name not in disabled_plugins
 
-    # Look up in registries based on source and type
-    # Check AGENT_REGISTRY first
+    # Check PLUGIN_REGISTRY for package plugins
+    if source == PluginSource.PACKAGE and name in PLUGIN_REGISTRY:
+        entry = PLUGIN_REGISTRY[name]
+        rating = await plugin_db.get_plugin_rating_info(plugin_name)
+        return _plugin_entry_to_plugin_info(entry, enabled=enabled, rating=rating)
+
+    # Check AGENT_REGISTRY for built-in agents
     if name in AGENT_REGISTRY:
         entry = AGENT_REGISTRY[name]
         rating = None
@@ -351,26 +413,19 @@ async def get_marketplace_plugins(
     disabled_plugins = await plugin_db.get_disabled_plugin_names(user_id)
     enabled_packages = await plugin_db.get_enabled_package_plugins(user_id)
 
-    # 1. Add preset/package agents
+    # 1. Add preset agents from AGENT_REGISTRY
     for entry in AGENT_REGISTRY.values():
-        source = PluginSource.PACKAGE if entry.source == "package" else PluginSource.PRESET
-
-        if source_filter and source != source_filter:
+        # Only include preset agents here
+        if entry.source != "preset":
             continue
 
-        plugin_name = f"{source.value}:{entry.name}"
+        if source_filter and source_filter != PluginSource.PRESET:
+            continue
 
-        # Package plugins default to disabled, others default to enabled
-        if source == PluginSource.PACKAGE:
-            enabled = plugin_name in enabled_packages
-        else:
-            enabled = plugin_name not in disabled_plugins
+        plugin_name = f"preset:{entry.name}"
+        enabled = plugin_name not in disabled_plugins
 
-        rating = None
-        if source == PluginSource.PACKAGE:
-            rating = await plugin_db.get_plugin_rating_info(plugin_name)
-
-        plugin = _agent_entry_to_plugin_info(entry, enabled=enabled, rating=rating)
+        plugin = _agent_entry_to_plugin_info(entry, enabled=enabled)
 
         if search:
             search_lower = search.lower()
@@ -383,7 +438,29 @@ async def get_marketplace_plugins(
 
         plugins.append(plugin)
 
-    # 2. Add preset/package skills
+    # 2. Add package plugins from PLUGIN_REGISTRY
+    for entry in PLUGIN_REGISTRY.values():
+        if source_filter and source_filter != PluginSource.PACKAGE:
+            continue
+
+        plugin_name = f"package:{entry.name}"
+        enabled = plugin_name in enabled_packages
+
+        rating = await plugin_db.get_plugin_rating_info(plugin_name)
+        plugin = _plugin_entry_to_plugin_info(entry, enabled=enabled, rating=rating)
+
+        if search:
+            search_lower = search.lower()
+            if (
+                search_lower not in plugin.name.lower()
+                and search_lower not in plugin.display_name.lower()
+                and search_lower not in plugin.description.lower()
+            ):
+                continue
+
+        plugins.append(plugin)
+
+    # 3. Add preset/package skills from SKILL_REGISTRY
     for entry in SKILL_REGISTRY.values():
         if entry.source.startswith("package:"):
             source = PluginSource.PACKAGE

@@ -50,6 +50,10 @@ def parse_command_metadata(cmd_path: Path) -> tuple[str | None, str, str]:
         description = metadata.get("description", "")
         argument_hint = metadata.get("argument-hint", "")
 
+        # Handle case where YAML parses [xxx] as a list instead of string
+        if isinstance(argument_hint, list):
+            argument_hint = ", ".join(str(item) for item in argument_hint)
+
         return name, description, argument_hint
 
     except yaml.YAMLError as e:

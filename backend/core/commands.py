@@ -3,6 +3,8 @@
 Returns commands from enabled plugins for the current user.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -10,6 +12,8 @@ from backend.auth.dependencies import get_current_user
 from backend.auth.models import UserInfo
 from backend.commands import COMMAND_REGISTRY
 from backend.plugins.service import is_plugin_enabled
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["commands"])
 
@@ -40,11 +44,16 @@ async def list_commands(user: UserInfo = Depends(get_current_user)) -> list[Comm
     Commands are user-invocable via /command_name syntax in the input bar.
     Only returns commands from plugins that the user has enabled.
     """
+    logger.info(f"[COMMANDS API] Total commands in registry: {len(COMMAND_REGISTRY)}")
+    logger.info(f"[COMMANDS API] Commands: {list(COMMAND_REGISTRY.keys())}")
+
     result: list[CommandResponse] = []
 
     for cmd in COMMAND_REGISTRY.values():
         # Check if plugin is enabled for this user
-        if await is_plugin_enabled(user.id, cmd.plugin_name):
+        is_enabled = await is_plugin_enabled(user.id, cmd.plugin_name)
+        logger.info(f"[COMMANDS API] Command '{cmd.name}' (plugin={cmd.plugin_name}) enabled={is_enabled}")
+        if is_enabled:
             result.append(
                 CommandResponse(
                     name=cmd.name,
@@ -57,6 +66,7 @@ async def list_commands(user: UserInfo = Depends(get_current_user)) -> list[Comm
     # Sort by command name for consistent ordering
     result.sort(key=lambda c: c.name)
 
+    logger.info(f"[COMMANDS API] Returning {len(result)} commands")
     return result
 
 

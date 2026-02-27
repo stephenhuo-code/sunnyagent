@@ -1,0 +1,9 @@
+{
+  "name": "manufacturing-qc",
+  "version": "0.1.0",
+  "description": "制造业质量保障工具包：质检报告生成、质量数据分析、SOP编写、8D报告、客诉分析",
+  "author": {
+    "name": "stephen"
+  },
+  "keywords": ["manufacturing", "quality", "inspection", "QC", "QA", "ISO9001", "8D", "SPC"]
+}

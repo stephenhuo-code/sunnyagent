@@ -5,19 +5,117 @@ based on SubtaskSpec requirements.
 
 Selection Priority:
 1. Explicit agent (explicit_agent field) - must be used if specified
-2. Capability matching - preset and package agents compete
+2. Capability matching - preset agents (AGENT_REGISTRY) and plugins (PLUGIN_REGISTRY) compete
 3. Generic fallback - when no match found
+
+Key Design:
+- Built-in agents (research, sql) are pre-registered in AGENT_REGISTRY
+- Package plugins are registered in PLUGIN_REGISTRY (metadata only)
+- Plugin Agent graphs are created dynamically when needed
 """
 
 import logging
 from typing import Any
 from uuid import UUID
 
+from langchain_core.tools import BaseTool, tool
+from langgraph.prebuilt import create_react_agent
+
 from backend.aime.models import Actor, SubtaskSpec
+from backend.checkpointer_store import get_checkpointer
+from backend.llm import get_model
+from backend.plugins.registry import PLUGIN_REGISTRY, PluginEntry
 from backend.registry import AGENT_REGISTRY, AgentEntry
 from backend.services.langfuse_service import get_langfuse_service
+from backend.skills import SKILL_REGISTRY, get_skill_summaries
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Plugin Agent System Prompt
+# =============================================================================
+
+_PLUGIN_AGENT_PROMPT = """\
+## Available Tools
+
+1. **File Reading** (`read_file`): Read file contents
+   - Use file paths from context
+   - Supports CSV, Excel, PDF, Word formats
+
+2. **Code Execution**:
+   - `execute_python`: Execute Python code
+   - `execute_python_with_input`: Execute code with input files
+   - `execute_python_with_file`: Execute code with output files
+
+3. **Skill Activation** (`activate_skill`): Load specialized instructions
+
+## Important Guidelines
+
+**File Access Rules**:
+- Only use file paths provided in context
+- Do not attempt to search or browse the filesystem
+- Use `read_file(file_path="...")` to read directly
+
+## Available Skills
+
+{skills_section}
+
+---
+
+**Always respond in the user's language.**
+"""
+
+
+# =============================================================================
+# Skill Activation Tool
+# =============================================================================
+
+
+@tool
+def activate_skill(skill_name: str) -> str:
+    """Activate a skill to get detailed instructions.
+
+    Use this tool when the user's request matches a skill's description.
+    The skill instructions will tell you how to complete the task.
+
+    Args:
+        skill_name: The skill name to activate (e.g., "pdf", "docx")
+
+    Returns:
+        Full skill instructions, or error message if not found.
+    """
+    skill = SKILL_REGISTRY.get(skill_name)
+    if skill:
+        return skill.load_instructions()
+    return f"Unknown skill: {skill_name}. Available skills: {', '.join(SKILL_REGISTRY.keys())}"
+
+
+def _create_plugin_tools() -> list[BaseTool]:
+    """Create the standard tool set for plugin agents.
+
+    Returns:
+        List of tools available to plugin agents
+
+    Note:
+        No `ls` tool - agents must use paths from context.
+        This prevents unwanted filesystem browsing.
+    """
+    # Import here to avoid circular imports
+    from backend.tools.file_tools import read_file
+    from backend.tools.sandbox import (
+        execute_python,
+        execute_python_with_file,
+        execute_python_with_input,
+    )
+
+    return [
+        read_file,
+        execute_python,
+        execute_python_with_input,
+        execute_python_with_file,
+        activate_skill,
+    ]
 
 
 class ActorFactory:
@@ -69,6 +167,53 @@ class ActorFactory:
         """
         plugin_name = f"{entry.source}:{entry.name}"
         return plugin_name not in disabled_plugins
+
+    def _create_plugin_actor(self, entry: PluginEntry, spec: SubtaskSpec) -> Actor:
+        """Dynamically create an Actor for a plugin.
+
+        Called when routing to a plugin instead of a built-in agent.
+        The Agent graph is created on-demand rather than at startup.
+
+        Args:
+            entry: Plugin metadata from PLUGIN_REGISTRY
+            spec: Subtask specification
+
+        Returns:
+            Configured Actor ready for execution
+        """
+        # Create tools
+        tools = _create_plugin_tools()
+
+        # Build system prompt
+        skills_section = get_skill_summaries()
+        system_prompt = _PLUGIN_AGENT_PROMPT.format(skills_section=skills_section)
+
+        # Create agent dynamically
+        model = get_model(entry.name)
+        graph = create_react_agent(
+            model=model,
+            tools=tools,
+            prompt=system_prompt,
+            checkpointer=get_checkpointer(),
+            name=entry.name,
+        )
+
+        logger.info(f"Dynamically created plugin actor '{entry.name}'")
+
+        # Load skill persona if skill task
+        persona = None
+        if spec.skill_name:
+            skill = SKILL_REGISTRY.get(spec.skill_name)
+            if skill:
+                persona = skill.load_instructions()
+                logger.debug(f"Loaded skill persona for: {spec.skill_name}")
+
+        return Actor(
+            name=entry.name,
+            graph=graph,
+            tools=tools,
+            persona=persona,
+        )
 
     async def select_actor(self, spec: SubtaskSpec) -> Actor:
         """Select and instantiate actor for a subtask.
@@ -129,11 +274,19 @@ class ActorFactory:
                 match = self.match_by_capabilities(spec.capabilities, disabled_plugins)
                 if match:
                     entry, score = match
-                    logger.info(
-                        f"[select_actor] Selected '{entry.name}' via capability match "
-                        f"(score={score})"
-                    )
-                    actor = self._create_actor_from_entry(entry, spec)
+                    # Check if it's a plugin (PluginEntry) or agent (AgentEntry)
+                    if isinstance(entry, PluginEntry):
+                        logger.info(
+                            f"[select_actor] Selected plugin '{entry.name}' via capability match "
+                            f"(score={score})"
+                        )
+                        actor = self._create_plugin_actor(entry, spec)
+                    else:
+                        logger.info(
+                            f"[select_actor] Selected agent '{entry.name}' via capability match "
+                            f"(score={score})"
+                        )
+                        actor = self._create_actor_from_entry(entry, spec)
                     if span:
                         span.update(output={
                             "selected_actor": actor.name,
@@ -159,6 +312,9 @@ class ActorFactory:
     def _select_explicit_agent(self, spec: SubtaskSpec) -> Actor:
         """Select explicitly specified agent.
 
+        Checks both AGENT_REGISTRY (built-in agents) and
+        PLUGIN_REGISTRY (package plugins).
+
         Args:
             spec: Subtask spec with explicit_agent set
 
@@ -166,32 +322,45 @@ class ActorFactory:
             Actor for the specified agent
 
         Raises:
-            ValueError: If agent not found in registry
+            ValueError: If agent not found in either registry
         """
         agent_name = spec.explicit_agent
         assert agent_name is not None
 
-        if agent_name not in AGENT_REGISTRY:
-            available = list(AGENT_REGISTRY.keys())
-            raise ValueError(
-                f"Agent '{agent_name}' not found in registry. "
-                f"Available agents: {available}"
-            )
+        # Priority 1: Check built-in agents
+        if agent_name in AGENT_REGISTRY:
+            entry = AGENT_REGISTRY[agent_name]
+            logger.info(f"Selected explicit agent: {agent_name}")
+            return self._create_actor_from_entry(entry, spec)
 
-        entry = AGENT_REGISTRY[agent_name]
-        logger.info(f"Selected explicit agent: {agent_name}")
-        return self._create_actor_from_entry(entry, spec)
+        # Priority 2: Check package plugins
+        if agent_name in PLUGIN_REGISTRY:
+            entry = PLUGIN_REGISTRY[agent_name]
+            logger.info(f"Selected explicit plugin: {agent_name}")
+            return self._create_plugin_actor(entry, spec)
+
+        # Not found - raise error with both registries
+        available_agents = list(AGENT_REGISTRY.keys())
+        available_plugins = list(PLUGIN_REGISTRY.keys())
+        raise ValueError(
+            f"Agent '{agent_name}' not found. "
+            f"Available agents: {available_agents}, "
+            f"Available plugins: {available_plugins}"
+        )
 
     def match_by_capabilities(
         self, required: list[str], disabled_plugins: set[str] | None = None
-    ) -> tuple[AgentEntry, int] | None:
-        """Find best matching agent by capabilities.
+    ) -> tuple[AgentEntry | PluginEntry, int] | None:
+        """Find best matching agent or plugin by capabilities.
+
+        Now checks both AGENT_REGISTRY (built-in agents) and
+        PLUGIN_REGISTRY (package plugins).
 
         Scoring:
         - Each matching capability adds 1 to score
         - Preset agents get +0.5 tiebreaker bonus
-        - Returns agent with highest score
-        - Agents from disabled plugins are excluded
+        - Returns agent/plugin with highest score
+        - Agents/plugins from disabled plugins are excluded
 
         Args:
             required: List of required capabilities
@@ -205,9 +374,10 @@ class ActorFactory:
 
         logger.debug(f"[match_by_capabilities] Matching required={required}")
         required_set = set(required)
-        best_match: tuple[AgentEntry, float] | None = None
+        best_match: tuple[AgentEntry | PluginEntry, float] | None = None
         disabled_plugins = disabled_plugins or set()
 
+        # Check AGENT_REGISTRY (built-in agents)
         for entry in AGENT_REGISTRY.values():
             if not entry.capabilities:
                 continue
@@ -232,13 +402,41 @@ class ActorFactory:
             if best_match is None or score > best_match[1]:
                 best_match = (entry, score)
                 logger.debug(
-                    f"[match_by_capabilities] New best: {entry.name} (score={score})"
+                    f"[match_by_capabilities] New best agent: {entry.name} (score={score})"
+                )
+
+        # Check PLUGIN_REGISTRY (package plugins)
+        for entry in PLUGIN_REGISTRY.values():
+            if not entry.capabilities:
+                continue
+
+            # Check if plugin is disabled
+            plugin_name = f"package:{entry.name}"
+            if plugin_name in disabled_plugins:
+                logger.debug(f"[match_by_capabilities] Skipping disabled plugin: {entry.name}")
+                continue
+
+            # Count matching capabilities
+            entry_caps = set(entry.capabilities)
+            matches = len(required_set & entry_caps)
+
+            if matches == 0:
+                continue
+
+            # Calculate score (plugins don't get tiebreaker bonus)
+            score = float(matches)
+
+            if best_match is None or score > best_match[1]:
+                best_match = (entry, score)
+                logger.debug(
+                    f"[match_by_capabilities] New best plugin: {entry.name} (score={score})"
                 )
 
         if best_match:
+            entry_type = "plugin" if isinstance(best_match[0], PluginEntry) else "agent"
             logger.debug(
                 f"[match_by_capabilities] Final match: {best_match[0].name} "
-                f"(score={int(best_match[1])})"
+                f"({entry_type}, score={int(best_match[1])})"
             )
             return (best_match[0], int(best_match[1]))
         logger.debug("[match_by_capabilities] No match found")

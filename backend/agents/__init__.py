@@ -3,7 +3,7 @@
 Order matters:
 1. Skills are loaded first (global skill registry)
 2. Built-in specialists (research, sql) register next
-3. Package agents (from packages/ directory) register next
+3. Package plugins (from packages/ directory) are registered to PLUGIN_REGISTRY
 """
 
 from backend.skills import load_all_skills
@@ -12,14 +12,12 @@ from backend.skills import load_all_skills
 load_all_skills()
 
 from backend.agents import research, sql  # noqa: F401
-from backend.agents.loader import load_package_agents
-from backend.agents.package_agent import create_package_agent, create_package_tools
+from backend.plugins.package_loader import load_package_agents, scan_and_load_new_packages
 
-# Load downloaded agent packages
+# Load package plugins (registers to PLUGIN_REGISTRY, not AGENT_REGISTRY)
 load_package_agents()
 
 __all__ = [
-    "create_package_agent",
-    "create_package_tools",
     "load_package_agents",
+    "scan_and_load_new_packages",
 ]
