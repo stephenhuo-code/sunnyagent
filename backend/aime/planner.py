@@ -730,6 +730,109 @@ class AIMEPlanner:
 
         return steps
 
+    def _step_needs_context(self, step_content: str, context_type: str) -> bool:
+        """Determine if a step needs specific context type.
+
+        Args:
+            step_content: The content/description of the step
+            context_type: Either 'files' or 'skills'
+
+        Returns:
+            True if the step needs this context type
+        """
+        content_lower = step_content.lower()
+
+        if context_type == "files":
+            # Keywords indicating step needs file access
+            keywords = [
+                "文件",
+                "数据",
+                "csv",
+                "excel",
+                "读取",
+                "read",
+                "file",
+                "探查",
+                "profiler",
+                "收集",
+                "加载",
+                "load",
+                "parse",
+                "解析",
+            ]
+            return any(kw in content_lower for kw in keywords)
+        elif context_type == "skills":
+            # Keywords indicating step needs skill instructions
+            keywords = [
+                "技能",
+                "skill",
+                "代码",
+                "python",
+                "执行",
+                "execute",
+                "profiler",
+                "探查",
+                "分析",
+                "处理",
+            ]
+            return any(kw in content_lower for kw in keywords)
+        return True  # Default to injecting
+
+    def _get_allowed_actions(self, step: dict[str, str]) -> str:
+        """Generate allowed actions list based on step content.
+
+        Args:
+            step: Step dictionary with 'content' key
+
+        Returns:
+            Formatted string of allowed actions
+        """
+        content = step["content"].lower()
+        allowed = []
+
+        if any(kw in content for kw in ["读取", "read", "文件", "csv", "excel", "file"]):
+            allowed.append("- 读取文件内容")
+        if any(kw in content for kw in ["python", "代码", "执行", "execute", "profiler"]):
+            allowed.append("- 执行 Python 代码")
+        if any(kw in content for kw in ["查询", "sql", "数据库", "database"]):
+            allowed.append("- 执行数据库查询")
+
+        return "\n".join(allowed) if allowed else "- 仅分析和输出文本"
+
+    def _get_forbidden_actions(
+        self, step: dict[str, str], step_index: int, total_steps: int
+    ) -> str:
+        """Generate forbidden actions list based on step content.
+
+        Args:
+            step: Step dictionary with 'content' key
+            step_index: 0-based index of current step
+            total_steps: Total number of steps
+
+        Returns:
+            Formatted string of forbidden actions
+        """
+        content = step["content"].lower()
+        forbidden = []
+
+        # If step doesn't involve data operations, forbid file reading and code execution
+        if not any(
+            kw in content for kw in ["读取", "read", "文件", "csv", "excel", "file", "收集", "探查"]
+        ):
+            forbidden.append("- 不要读取文件")
+        if not any(
+            kw in content for kw in ["python", "代码", "执行", "execute", "profiler", "处理"]
+        ):
+            forbidden.append("- 不要执行 Python 代码")
+        if not any(kw in content for kw in ["查询", "sql", "数据库", "database"]):
+            forbidden.append("- 不要执行数据库查询")
+
+        # Always forbid executing subsequent steps
+        if step_index < total_steps - 1:
+            forbidden.append(f"- 不要执行步骤 {step_index + 2} 及之后的工作")
+
+        return "\n".join(forbidden) if forbidden else "- 无特殊限制"
+
     async def _execute_command_steps(
         self,
         command_name: str,
@@ -739,6 +842,7 @@ class AIMEPlanner:
         thread_id: str,
         event_id: int,
         file_section: str = "",
+        skill_instructions: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute command workflow steps sequentially.
 
@@ -753,6 +857,7 @@ class AIMEPlanner:
             thread_id: Thread ID (original, used for persisting final result)
             event_id: Starting event ID
             file_section: Optional file context section
+            skill_instructions: Optional skill instructions to inject
 
         Yields:
             SSE events for each step execution
@@ -762,21 +867,60 @@ class AIMEPlanner:
         command_thread_id = f"cmd-{command_name}-{uuid4().hex[:8]}"
 
         # 1. Create SubtaskSpecs for each step
+        logger.info(
+            f"[_execute_command_steps] Creating {len(workflow_steps)} subtasks, "
+            f"skill_instructions present: {bool(skill_instructions)}, len={len(skill_instructions)}"
+        )
+        total_steps = len(workflow_steps)
         subtasks: list[SubtaskSpec] = []
         for i, step in enumerate(workflow_steps):
-            step_description = f"""## 命令: /{command_name} - 步骤 {step['id']}
+            # Determine if this step needs file and skill context
+            step_needs_files = self._step_needs_context(step["content"], "files")
+            step_needs_skills = self._step_needs_context(step["content"], "skills")
+
+            # Only inject context when needed
+            current_file_section = file_section if step_needs_files else ""
+            current_skill_instructions = skill_instructions if step_needs_skills else ""
+
+            # Get allowed and forbidden actions for this step
+            allowed_actions = self._get_allowed_actions(step)
+            forbidden_actions = self._get_forbidden_actions(step, i, total_steps)
+
+            logger.info(
+                f"[_execute_command_steps] Step {i+1}: needs_files={step_needs_files}, "
+                f"needs_skills={step_needs_skills}"
+            )
+
+            step_description = f"""## 命令: /{command_name} - 步骤 {step['id']} (共 {total_steps} 步)
 
 ## 用户原始请求
 {user_args}
-{file_section}
+{current_file_section}
 ## 当前步骤: {step['title']}
 
 {step['content']}
+{current_skill_instructions}
+## 步骤边界约束 [必须遵守]
 
-## 重要
-- 只完成当前步骤的工作
-- 不要执行后续步骤
+**此步骤的目标**: {step['title']}
+
+**允许的操作**:
+- 分析和理解信息
+- 生成文本输出
+{allowed_actions}
+
+**禁止的操作**:
+{forbidden_actions}
+
+**输出要求**:
+- 只输出此步骤的结果
+- 不要预先执行后续步骤的工作
+- 如果需要的信息不足，说明缺少什么，而不是自行获取
 """
+            logger.info(
+                f"[_execute_command_steps] Step {i+1} description length: {len(step_description)}, "
+                f"has skill_instructions: {bool(current_skill_instructions)}"
+            )
             spec = SubtaskSpec(
                 id=f"cmd-{command_name}-{step['id']}-{uuid4().hex[:8]}",
                 description=step_description,
@@ -845,6 +989,7 @@ class AIMEPlanner:
 
             # Execute step using command_thread_id to avoid loading full history
             result_text = ""
+            tool_outputs: list[str] = []  # Collect tool outputs for context
             async for event in self._execute_actor(
                 actor,
                 task_message,
@@ -870,6 +1015,13 @@ class AIMEPlanner:
                     data = json.loads(event.get("data", "{}"))
                     data["task_id"] = spec.id
                     yield _format_sse(str(event_type), data, event_id)
+
+                    # Collect data-related tool outputs for context passing
+                    if event_type == "tool_call_result":
+                        tool_name = data.get("name", "")
+                        tool_output = data.get("output", "")
+                        if tool_name in ("execute_python", "execute_python_with_input") and tool_output:
+                            tool_outputs.append(tool_output)
 
             # Complete step
             step_duration_ms = int((time.time() - step_start_time) * 1000)
@@ -899,7 +1051,12 @@ class AIMEPlanner:
             })
 
             # Add to accumulated context for next step (limit to prevent context overflow)
-            accumulated_context += f"\n### {step['title']}\n{result_text[:2000]}\n"
+            # Include tool outputs when available for better context passing
+            if tool_outputs:
+                tool_context = "\n\n---\n\n".join(tool_outputs)[:4000]
+                accumulated_context += f"\n### {step['title']}\n{result_text[:1500]}\n\n### 工具执行结果\n{tool_context}\n"
+            else:
+                accumulated_context += f"\n### {step['title']}\n{result_text[:2000]}\n"
 
             logger.info(
                 f"[_execute_command_steps] Step {i + 1}/{len(subtasks)} completed - "
@@ -1036,6 +1193,26 @@ class AIMEPlanner:
         # 3. Load command content (workflow)
         command_content = command.load_content()
 
+        # 3.5 Inject skill instructions if command declares skills
+        skill_instructions = ""
+        if command.skills:
+            from backend.skills.registry import SKILL_REGISTRY
+            logger.info(f"[_handle_command] Command skills: {command.skills}")
+            logger.info(f"[_handle_command] SKILL_REGISTRY keys: {list(SKILL_REGISTRY.keys())}")
+            for skill_name in command.skills:
+                if skill_name in SKILL_REGISTRY:
+                    skill = SKILL_REGISTRY[skill_name]
+                    instructions = skill.load_instructions()
+                    skill_instructions += f"\n\n## [Skill: {skill_name}]\n{instructions}\n"
+                    logger.info(f"[_handle_command] Injected skill: {skill_name}, len={len(instructions)}")
+                else:
+                    logger.warning(
+                        f"[_handle_command] Skill not found: {skill_name}"
+                    )
+            logger.info(f"[_handle_command] Total skill_instructions length: {len(skill_instructions)}")
+        else:
+            logger.info(f"[_handle_command] No skills declared for command")
+
         # 4. Extract user arguments (remove /command prefix)
         user_args = message.split(maxsplit=1)[1] if " " in message else ""
 
@@ -1067,6 +1244,10 @@ class AIMEPlanner:
                 f"[_handle_command] Found {len(workflow_steps)} workflow steps, "
                 f"delegating to step executor"
             )
+            logger.info(
+                f"[_handle_command] skill_instructions to pass: len={len(skill_instructions)}, "
+                f"preview={skill_instructions[:200] if skill_instructions else 'None'}..."
+            )
             try:
                 async for event in self._execute_command_steps(
                     command_name=command_name,
@@ -1076,6 +1257,7 @@ class AIMEPlanner:
                     thread_id=thread_id,
                     event_id=event_id,
                     file_section=file_section,
+                    skill_instructions=skill_instructions,
                 ):
                     yield event
             except Exception as e:
@@ -1100,7 +1282,7 @@ class AIMEPlanner:
 {file_section}
 ## 命令说明和工作流程
 {command_content}
-
+{skill_instructions}
 ## 重要
 严格按照上述工作流程执行任务。
 """
@@ -1373,6 +1555,10 @@ class AIMEPlanner:
         collected_tools: list[dict[str, Any]] = []  # Collect tool call info
         event_count = 0  # Track event count
         try:
+            logger.info(
+                f"[_execute_actor] Starting stream for actor={actor.name}, "
+                f"message_len={len(message)}, task_id={task_id}"
+            )
             async for event in stream_agent_response(
                 agent=actor.graph,
                 thread_id=thread_id,
@@ -1385,6 +1571,10 @@ class AIMEPlanner:
                 if event.get("event") != "done":
                     event_type = event.get("event")
                     event_count += 1
+
+                    # Log event types for debugging (first 10 events to avoid spam)
+                    if event_count <= 10:
+                        logger.debug(f"[_execute_actor] Event {event_count}: type={event_type}")
 
                     # Collect text_delta content for Langfuse span output
                     if event_type == "text_delta":
@@ -1407,6 +1597,11 @@ class AIMEPlanner:
 
                     yield event
                     event_id += 1
+
+            logger.info(
+                f"[_execute_actor] Stream completed for actor={actor.name}, "
+                f"event_count={event_count}, output_len={len(collected_output)}"
+            )
 
         except Exception as e:
             error_occurred = e

@@ -11,39 +11,42 @@ from backend.commands.registry import CommandEntry, register_command
 logger = logging.getLogger(__name__)
 
 
-def parse_command_metadata(cmd_path: Path) -> tuple[str | None, str, str]:
+def parse_command_metadata(cmd_path: Path) -> tuple[str | None, str, str, list[str]]:
     """Parse YAML frontmatter from a command .md file.
 
-    Returns (name, description, argument_hint) where:
+    Returns (name, description, argument_hint, skills) where:
     - name: Command name derived from filename (without extension)
     - description: From YAML frontmatter 'description' field
     - argument_hint: From YAML frontmatter 'argument-hint' field
+    - skills: List of skill names to inject from YAML 'skills' field
 
-    Returns (None, "", "") if parsing fails.
+    Returns (None, "", "", []) if parsing fails.
 
     YAML frontmatter format:
         ---
         description: Command description
         argument-hint: "<question>"
+        skills:
+          - data-profiler
         ---
     """
     try:
         content = cmd_path.read_text()
     except Exception as e:
         logger.warning(f"Failed to read {cmd_path}: {e}")
-        return None, "", ""
+        return None, "", "", []
 
     # Extract YAML frontmatter between --- markers
     match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
     if not match:
         logger.warning(f"No YAML frontmatter in {cmd_path}")
-        return None, "", ""
+        return None, "", "", []
 
     try:
         metadata = yaml.safe_load(match.group(1))
         if not isinstance(metadata, dict):
             logger.warning(f"Invalid YAML metadata in {cmd_path}")
-            return None, "", ""
+            return None, "", "", []
 
         # Use filename (without extension) as command name
         name = cmd_path.stem
@@ -54,11 +57,18 @@ def parse_command_metadata(cmd_path: Path) -> tuple[str | None, str, str]:
         if isinstance(argument_hint, list):
             argument_hint = ", ".join(str(item) for item in argument_hint)
 
-        return name, description, argument_hint
+        # Parse skills field
+        skills = metadata.get("skills", [])
+        if isinstance(skills, str):
+            skills = [skills]
+        elif not isinstance(skills, list):
+            skills = []
+
+        return name, description, argument_hint, skills
 
     except yaml.YAMLError as e:
         logger.warning(f"Invalid YAML in {cmd_path}: {e}")
-        return None, "", ""
+        return None, "", "", []
 
 
 def load_commands_from_directory(commands_dir: Path, plugin_name: str) -> int:
@@ -79,7 +89,7 @@ def load_commands_from_directory(commands_dir: Path, plugin_name: str) -> int:
         if not cmd_file.is_file():
             continue
 
-        name, description, argument_hint = parse_command_metadata(cmd_file)
+        name, description, argument_hint, skills = parse_command_metadata(cmd_file)
         if name:
             entry = CommandEntry(
                 name=name,
@@ -87,9 +97,12 @@ def load_commands_from_directory(commands_dir: Path, plugin_name: str) -> int:
                 argument_hint=argument_hint,
                 path=cmd_file,
                 plugin_name=plugin_name,
+                skills=skills,
             )
             register_command(entry)
             logger.info(f"Registered command: /{name} ({plugin_name})")
+            if skills:
+                logger.info(f"  - Skills: {', '.join(skills)}")
             count += 1
 
     return count

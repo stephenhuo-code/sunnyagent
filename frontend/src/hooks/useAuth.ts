@@ -65,9 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkAuth]);
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await apiLogin(username, password);
-    setUser(response.user);
-  }, []);
+    await apiLogin(username, password);
+    // Don't directly setUser - call checkAuth to verify the cookie is set
+    // This ensures the browser has fully processed the auth cookie
+    await checkAuth();
+  }, [checkAuth]);
 
   const logout = useCallback(async () => {
     await apiLogout();

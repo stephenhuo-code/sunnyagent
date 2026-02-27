@@ -21,6 +21,7 @@ class CommandEntry:
     argument_hint: str  # Argument hint (e.g., "<question>")
     path: Path  # Path to command .md file
     plugin_name: str  # Owning plugin (e.g., "package:data")
+    skills: list[str] = field(default_factory=list)  # Skills to inject
     _content: str | None = field(default=None, repr=False)
 
     def load_content(self) -> str:
