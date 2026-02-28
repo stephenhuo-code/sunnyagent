@@ -6,6 +6,7 @@ import io
 import logging
 import mimetypes
 import os
+import re
 import tarfile
 import uuid
 from pathlib import Path
@@ -22,6 +23,102 @@ if TYPE_CHECKING:
     from docker.models.containers import Container
 
 logger = logging.getLogger(__name__)
+
+# ============================================
+# 自动安装缺失包相关常量和函数
+# ============================================
+
+# 运行时可安装的安全包白名单（需与 whitelist.txt 保持同步）
+SAFE_PACKAGES_WHITELIST = {
+    # pandas 可选依赖
+    "xlrd", "xlsxwriter", "pyarrow", "fastparquet",
+    "lxml", "beautifulsoup4", "html5lib",
+    "sqlalchemy", "jinja2", "bottleneck", "numexpr",
+    # 科学计算与统计
+    "scipy", "scikit-learn", "statsmodels",
+    # 数据可视化扩展
+    "seaborn", "plotly",
+    # 网络请求
+    "requests",
+    # 编码检测
+    "chardet",
+    # 日期时间处理
+    "python-dateutil", "pytz",
+}
+
+# 模块名到包名映射（处理 import 名称与 pip 包名不同的情况）
+MODULE_TO_PACKAGE = {
+    "sklearn": "scikit-learn",
+    "cv2": "opencv-python",
+    "PIL": "Pillow",
+    "bs4": "beautifulsoup4",
+    "yaml": "pyyaml",
+    "dateutil": "python-dateutil",
+}
+
+
+def _extract_missing_module(stderr: str) -> str | None:
+    """从错误信息中提取缺失的模块名。
+
+    Args:
+        stderr: 标准错误输出
+
+    Returns:
+        缺失的模块名（顶层模块），如果无法提取返回 None
+    """
+    patterns = [
+        r"No module named ['\"]([^'\"]+)['\"]",
+        r"ModuleNotFoundError: No module named ['\"]([^'\"]+)['\"]",
+        r"ImportError: cannot import name ['\"]([^'\"]+)['\"]",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, stderr)
+        if match:
+            # 返回顶层模块名（如 pandas.compat 返回 pandas）
+            return match.group(1).split(".")[0]
+    return None
+
+
+async def _try_install_missing_package(
+    container: "Container",
+    module_name: str,
+    loop: asyncio.AbstractEventLoop,
+) -> tuple[bool, str]:
+    """尝试从离线缓存安装缺失的包。
+
+    Args:
+        container: Docker 容器实例
+        module_name: 缺失的模块名
+        loop: 事件循环
+
+    Returns:
+        (成功标志, 消息)
+    """
+    # 将模块名转换为包名
+    package_name = MODULE_TO_PACKAGE.get(module_name, module_name)
+
+    # 检查是否在白名单中
+    if package_name not in SAFE_PACKAGES_WHITELIST:
+        return False, f"包 '{package_name}' 不在安全白名单中，无法自动安装"
+
+    # 尝试从离线缓存安装
+    install_cmd = f"pip install --no-index --find-links=/pip-cache {package_name}"
+    result = await loop.run_in_executor(
+        None,
+        lambda: container.exec_run(
+            ["sh", "-c", install_cmd],
+            workdir="/workspace",
+            stdout=True,
+            stderr=True,
+        ),
+    )
+
+    if result.exit_code != 0:
+        output = result.output.decode() if result.output else ""
+        return False, f"安装 {package_name} 失败: {output}"
+
+    logger.info(f"Auto-installed missing package: {package_name}")
+    return True, f"已自动安装 {package_name}"
 
 # 临时文件存储目录
 from backend.core.storage import get_temp_files_dir, get_project_files_dir
@@ -274,17 +371,37 @@ async def execute_python(
 
     try:
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: pooled.container.exec_run(
-                ["python", "-c", code],
-                stdout=True,
-                stderr=True,
-                demux=True,
-            ),
-        )
 
+        # 定义执行代码的内部函数
+        async def run_code():
+            return await loop.run_in_executor(
+                None,
+                lambda: pooled.container.exec_run(
+                    ["python", "-c", code],
+                    stdout=True,
+                    stderr=True,
+                    demux=True,
+                ),
+            )
+
+        result = await run_code()
         stdout, stderr = result.output
+
+        # 如果执行失败，尝试自动安装缺失的包并重试
+        if result.exit_code != 0 and stderr:
+            stderr_text = stderr.decode()
+            missing_module = _extract_missing_module(stderr_text)
+
+            if missing_module:
+                success, install_msg = await _try_install_missing_package(
+                    pooled.container, missing_module, loop
+                )
+                if success:
+                    logger.info(f"Retrying after installing {missing_module}")
+                    # 重新执行代码
+                    result = await run_code()
+                    stdout, stderr = result.output
+
         output_parts = []
 
         if stdout:
@@ -353,14 +470,31 @@ async def execute_python_with_file(
     try:
         # 执行代码
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: pooled.container.exec_run(
-                ["python", "-c", code],
-                stdout=True,
-                stderr=True,
-            ),
-        )
+
+        async def run_code():
+            return await loop.run_in_executor(
+                None,
+                lambda: pooled.container.exec_run(
+                    ["python", "-c", code],
+                    stdout=True,
+                    stderr=True,
+                ),
+            )
+
+        result = await run_code()
+
+        # 如果执行失败，尝试自动安装缺失的包并重试
+        if result.exit_code != 0:
+            output_text = result.output.decode() if result.output else ""
+            missing_module = _extract_missing_module(output_text)
+
+            if missing_module:
+                success, install_msg = await _try_install_missing_package(
+                    pooled.container, missing_module, loop
+                )
+                if success:
+                    logger.info(f"Retrying after installing {missing_module}")
+                    result = await run_code()
 
         if result.exit_code != 0:
             return f"❌ 代码执行失败:\n```\n{result.output.decode()}\n```"
@@ -523,17 +657,34 @@ async def execute_python_with_input(
             )
 
         # 2. 执行代码
-        result = await loop.run_in_executor(
-            None,
-            lambda: pooled.container.exec_run(
-                ["python", "-c", code],
-                stdout=True,
-                stderr=True,
-                demux=True,
-            ),
-        )
+        async def run_code():
+            return await loop.run_in_executor(
+                None,
+                lambda: pooled.container.exec_run(
+                    ["python", "-c", code],
+                    stdout=True,
+                    stderr=True,
+                    demux=True,
+                ),
+            )
 
+        result = await run_code()
         stdout, stderr = result.output
+
+        # 如果执行失败，尝试自动安装缺失的包并重试
+        if result.exit_code != 0 and stderr:
+            stderr_text = stderr.decode()
+            missing_module = _extract_missing_module(stderr_text)
+
+            if missing_module:
+                success, install_msg = await _try_install_missing_package(
+                    pooled.container, missing_module, loop
+                )
+                if success:
+                    logger.info(f"Retrying after installing {missing_module}")
+                    result = await run_code()
+                    stdout, stderr = result.output
+
         output_parts = []
 
         if stdout:

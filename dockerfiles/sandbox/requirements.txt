@@ -3,9 +3,17 @@ python-pptx>=0.6.23
 python-docx>=1.1.0
 openpyxl>=3.1.2
 
+# Excel 读写扩展
+xlrd>=2.0.1              # 读取旧版 .xls 文件
+xlsxwriter>=3.1.0        # Excel 写入（高级功能）
+
 # 数据处理
 pandas>=2.1.0
 numpy>=1.26.0
+
+# 数据格式扩展
+pyarrow>=14.0.0          # Parquet 文件支持
+lxml>=5.0.0              # XML/HTML 解析
 
 # 图像处理
 Pillow>=10.0.0
@@ -20,3 +28,12 @@ matplotlib>=3.8.0
 
 # 表格格式化 (pandas to_markdown)
 tabulate>=0.9.0
+
+# 模板渲染 (pandas Styler)
+jinja2>=3.1.0
+
+# 数据库操作
+sqlalchemy>=2.0.0
+
+# 科学计算
+scipy>=1.11.0

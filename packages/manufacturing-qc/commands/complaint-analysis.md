@@ -18,6 +18,8 @@ skills:
 
 
 ### 1. 理解问题
+capabilities: text_only
+skills: none
 
 **步骤目标**: 解析用户问题，确定分析方向
 
@@ -55,6 +57,8 @@ skills:
 
 
 ### 2. 收集和理解数据
+capabilities: file_read, code_execution
+skills: data-profiler
 
 **步骤目标**: 读取数据文件，了解数据结构
 
@@ -95,6 +99,8 @@ skills:
 
 
 ### 3. 处理数据，回答客户问题
+capabilities: code_execution
+skills: none
 
 **步骤目标**: 执行数据分析，整理回答客户问的数据基础
 
@@ -108,6 +114,8 @@ skills:
 
 
 ### 4. 生成客诉分析报告
+capabilities: text_only
+skills: none
 
 **步骤目标**: 生成完整的客诉分析报告
 

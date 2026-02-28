@@ -47,7 +47,7 @@ PROVIDER_PRESETS: dict[LLMProvider, ProviderConfig] = {
         "api_key_env": "OPENAI_API_KEY",
         "api_base": None,  # Use litellm default
         "models": {
-            "supervisor": "gpt-4o",
+            "supervisor": "gpt-5",  # 最强推理模型，用于规划
             "research": "gpt-4o",
             "sql": "gpt-4o-mini",
             "generic": "gpt-4o",

@@ -91,11 +91,33 @@ def activate_skill(skill_name: str) -> str:
     return f"Unknown skill: {skill_name}. Available skills: {', '.join(SKILL_REGISTRY.keys())}"
 
 
-def _create_plugin_tools() -> list[BaseTool]:
-    """Create the standard tool set for plugin agents.
+# =============================================================================
+# Capability to Tool Mapping (Primary Defense Layer)
+# =============================================================================
+
+# Maps capability names to the tool names they enable
+CAPABILITY_TOOL_MAP: dict[str, list[str]] = {
+    "file_read": ["read_file"],
+    "code_execution": [
+        "execute_python",
+        "execute_python_with_input",
+        "execute_python_with_file",
+    ],
+    "skill_activation": ["activate_skill"],
+}
+
+
+def _create_plugin_tools(capabilities: list[str] | None = None) -> list[BaseTool]:
+    """Create tool set for plugin agents, optionally filtered by capabilities.
+
+    Args:
+        capabilities: Allowed capabilities list
+            - None: All tools (default behavior)
+            - []: No tools (text_only mode)
+            - ["file_read", "code_execution"]: Only matching tools
 
     Returns:
-        List of tools available to plugin agents
+        Filtered list of tools based on capabilities
 
     Note:
         No `ls` tool - agents must use paths from context.
@@ -109,13 +131,38 @@ def _create_plugin_tools() -> list[BaseTool]:
         execute_python_with_input,
     )
 
-    return [
-        read_file,
-        execute_python,
-        execute_python_with_input,
-        execute_python_with_file,
-        activate_skill,
-    ]
+    # Map tool names to actual tool objects
+    all_tools: dict[str, BaseTool] = {
+        "read_file": read_file,
+        "execute_python": execute_python,
+        "execute_python_with_input": execute_python_with_input,
+        "execute_python_with_file": execute_python_with_file,
+        "activate_skill": activate_skill,
+    }
+
+    # None = return all tools (default behavior)
+    if capabilities is None:
+        return list(all_tools.values())
+
+    # Empty list = no tools (text_only mode)
+    if len(capabilities) == 0:
+        logger.info("[_create_plugin_tools] text_only mode - returning no tools")
+        return []
+
+    # Filter tools based on capabilities
+    allowed_tool_names: set[str] = set()
+    for cap in capabilities:
+        if cap in CAPABILITY_TOOL_MAP:
+            allowed_tool_names.update(CAPABILITY_TOOL_MAP[cap])
+        else:
+            logger.warning(f"[_create_plugin_tools] Unknown capability: {cap}")
+
+    filtered_tools = [all_tools[name] for name in allowed_tool_names if name in all_tools]
+    logger.info(
+        f"[_create_plugin_tools] capabilities={capabilities} -> "
+        f"tools={[t.name for t in filtered_tools]}"
+    )
+    return filtered_tools
 
 
 class ActorFactory:
@@ -168,7 +215,12 @@ class ActorFactory:
         plugin_name = f"{entry.source}:{entry.name}"
         return plugin_name not in disabled_plugins
 
-    def _create_plugin_actor(self, entry: PluginEntry, spec: SubtaskSpec) -> Actor:
+    def _create_plugin_actor(
+        self,
+        entry: PluginEntry,
+        spec: SubtaskSpec,
+        step_capabilities: list[str] | None = None,
+    ) -> Actor:
         """Dynamically create an Actor for a plugin.
 
         Called when routing to a plugin instead of a built-in agent.
@@ -177,12 +229,16 @@ class ActorFactory:
         Args:
             entry: Plugin metadata from PLUGIN_REGISTRY
             spec: Subtask specification
+            step_capabilities: Optional step-level capability restrictions
+                - None: Use all tools (default)
+                - []: No tools (text_only)
+                - ["file_read", ...]: Only specified capabilities
 
         Returns:
             Configured Actor ready for execution
         """
-        # Create tools
-        tools = _create_plugin_tools()
+        # Create tools with capability filtering
+        tools = _create_plugin_tools(step_capabilities)
 
         # Build system prompt
         skills_section = get_skill_summaries()
@@ -215,7 +271,11 @@ class ActorFactory:
             persona=persona,
         )
 
-    async def select_actor(self, spec: SubtaskSpec) -> Actor:
+    async def select_actor(
+        self,
+        spec: SubtaskSpec,
+        step_capabilities: list[str] | None = None,
+    ) -> Actor:
         """Select and instantiate actor for a subtask.
 
         Selection priority:
@@ -225,6 +285,10 @@ class ActorFactory:
 
         Args:
             spec: Subtask specification from Planner
+            step_capabilities: Optional step-level capability restrictions
+                - None: Use all tools (default)
+                - []: No tools (text_only mode)
+                - ["file_read", "code_execution"]: Only specified tools
 
         Returns:
             Configured Actor ready for execution
@@ -234,7 +298,7 @@ class ActorFactory:
         """
         logger.info(
             f"[select_actor] Starting - explicit_agent={spec.explicit_agent}, "
-            f"capabilities={spec.capabilities}"
+            f"capabilities={spec.capabilities}, step_capabilities={step_capabilities}"
         )
 
         # Create Langfuse span for actor selection
@@ -262,7 +326,7 @@ class ActorFactory:
             # Priority 1: Explicit agent specification
             if spec.explicit_agent:
                 logger.info(f"[select_actor] Using explicit agent path")
-                actor = self._select_explicit_agent(spec)
+                actor = self._select_explicit_agent(spec, step_capabilities)
                 if span:
                     span.update(output={"selected_actor": actor.name, "path": "explicit"})
                 return actor
@@ -280,7 +344,7 @@ class ActorFactory:
                             f"[select_actor] Selected plugin '{entry.name}' via capability match "
                             f"(score={score})"
                         )
-                        actor = self._create_plugin_actor(entry, spec)
+                        actor = self._create_plugin_actor(entry, spec, step_capabilities)
                     else:
                         logger.info(
                             f"[select_actor] Selected agent '{entry.name}' via capability match "
@@ -297,7 +361,7 @@ class ActorFactory:
 
             # Priority 3: Generic fallback
             logger.info("[select_actor] Using generic fallback path")
-            actor = self.create_generic_actor(spec)
+            actor = self.create_generic_actor(spec, step_capabilities)
             if span:
                 span.update(output={"selected_actor": actor.name, "path": "generic_fallback"})
             return actor
@@ -309,7 +373,11 @@ class ActorFactory:
                 except Exception:
                     pass
 
-    def _select_explicit_agent(self, spec: SubtaskSpec) -> Actor:
+    def _select_explicit_agent(
+        self,
+        spec: SubtaskSpec,
+        step_capabilities: list[str] | None = None,
+    ) -> Actor:
         """Select explicitly specified agent.
 
         Checks both AGENT_REGISTRY (built-in agents) and
@@ -317,6 +385,7 @@ class ActorFactory:
 
         Args:
             spec: Subtask spec with explicit_agent set
+            step_capabilities: Optional step-level capability restrictions
 
         Returns:
             Actor for the specified agent
@@ -337,7 +406,7 @@ class ActorFactory:
         if agent_name in PLUGIN_REGISTRY:
             entry = PLUGIN_REGISTRY[agent_name]
             logger.info(f"Selected explicit plugin: {agent_name}")
-            return self._create_plugin_actor(entry, spec)
+            return self._create_plugin_actor(entry, spec, step_capabilities)
 
         # Not found - raise error with both registries
         available_agents = list(AGENT_REGISTRY.keys())
@@ -442,19 +511,24 @@ class ActorFactory:
         logger.debug("[match_by_capabilities] No match found")
         return None
 
-    def create_generic_actor(self, spec: SubtaskSpec) -> Actor:
+    def create_generic_actor(
+        self,
+        spec: SubtaskSpec,
+        step_capabilities: list[str] | None = None,
+    ) -> Actor:
         """Create a generic actor as fallback.
 
         Args:
             spec: Subtask specification
+            step_capabilities: Optional step-level capability restrictions
 
         Returns:
-            Generic Actor with standard tools
+            Generic Actor with standard tools (filtered by capabilities)
         """
         from backend.aime.actors.generic import create_generic_actor
 
-        logger.info("Creating dynamic generic actor")
-        return create_generic_actor(spec)
+        logger.info(f"Creating dynamic generic actor (step_capabilities={step_capabilities})")
+        return create_generic_actor(spec, step_capabilities)
 
     def _create_actor_from_entry(
         self, entry: AgentEntry, spec: SubtaskSpec

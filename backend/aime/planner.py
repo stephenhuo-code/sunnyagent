@@ -663,7 +663,66 @@ class AIMEPlanner:
                     event_id,
                 )
 
-    def _parse_workflow_steps(self, content: str) -> list[dict[str, str]]:
+    def _parse_step_dsl_value(self, step_content: str, key: str) -> tuple[str | None, str]:
+        """Extract single-value DSL declaration from step content.
+
+        Parses declarations like:
+        - query_label: 分析此问题的意图和数据需求
+
+        Args:
+            step_content: Raw step content from markdown
+            key: DSL key to extract (e.g., 'query_label')
+
+        Returns:
+            Tuple of (extracted value or None, cleaned content without the DSL line)
+        """
+        import re
+        pattern = rf'^{key}:\s*(.+)$'
+        match = re.search(pattern, step_content, re.MULTILINE | re.IGNORECASE)
+        if not match:
+            return None, step_content
+        value = match.group(1).strip()
+        # Remove the DSL line from content
+        cleaned = re.sub(rf'^{key}:\s*.+\n?', '', step_content, flags=re.MULTILINE | re.IGNORECASE)
+        return value, cleaned.strip()
+
+    def _parse_step_dsl_list(self, step_content: str, key: str) -> tuple[list[str] | None, str]:
+        """Extract list DSL declaration from step content.
+
+        Parses declarations like:
+        - capabilities: file_read, code_execution
+        - skills: data-profiler, sql-queries
+
+        Special values:
+        - 'none' or 'text_only': Returns empty list []
+        - 'all' or not present: Returns None (meaning all/default)
+
+        Args:
+            step_content: Raw step content from markdown
+            key: DSL key to extract (e.g., 'capabilities', 'skills')
+
+        Returns:
+            Tuple of (list of values, None for all, or [] for none; cleaned content)
+        """
+        import re
+        pattern = rf'^{key}:\s*(.+)$'
+        match = re.search(pattern, step_content, re.MULTILINE | re.IGNORECASE)
+        if not match:
+            return None, step_content
+
+        value_str = match.group(1).strip().lower()
+        if value_str in ('none', 'text_only'):
+            result: list[str] | None = []
+        elif value_str == 'all':
+            result = None
+        else:
+            result = [v.strip() for v in value_str.split(',')]
+
+        # Remove the DSL line from content
+        cleaned = re.sub(rf'^{key}:\s*.+\n?', '', step_content, flags=re.MULTILINE | re.IGNORECASE)
+        return result, cleaned.strip()
+
+    def _parse_workflow_steps(self, content: str) -> list[dict[str, Any]]:
         """Parse workflow steps from command markdown.
 
         Steps are located under the `## workflow` or `## 工作流程` section:
@@ -671,15 +730,26 @@ class AIMEPlanner:
         ## workflow
 
         ### 1. 理解问题
+        capabilities: text_only
+        skills: none
         解析用户的问题并确定...
 
         ### 2. 获取数据
+        capabilities: file_read, code_execution
+        skills: data-profiler
         优先级 1: ...
 
         ## 示例  <-- workflow section ends here
 
         Returns:
-            List of {"id": "step_1", "title": "理解问题", "content": "..."}
+            List of step dicts with keys:
+            - id: Step identifier (e.g., "step_1")
+            - title: Step title
+            - content: Step content (DSL declarations removed)
+            - capabilities: None (all), [] (none), or list of capabilities
+            - allowed_skills: None (all), [] (none), or list of skill names
+            - dsl_query_label: Query label from DSL (may be None)
+            - depends_on: List of step IDs this step depends on (None = default linear)
         """
         import re
 
@@ -708,7 +778,7 @@ class AIMEPlanner:
         if not matches:
             return []
 
-        steps = []
+        steps: list[dict[str, Any]] = []
         for i, match in enumerate(matches):
             step_num = match.group(1)
             step_title = match.group(2).strip()
@@ -722,13 +792,136 @@ class AIMEPlanner:
 
             step_content = workflow_content[start_pos:end_pos].strip()
 
+            # Extract DSL declarations (order matters - each extraction cleans the content)
+            step_capabilities, step_content = self._parse_step_dsl_list(step_content, 'capabilities')
+            allowed_skills, step_content = self._parse_step_dsl_list(step_content, 'skills')
+            dsl_query_label, step_content = self._parse_step_dsl_value(step_content, 'query_label')
+            # depends_on: allows custom dependency declaration (e.g., "depends_on: step_1, step_2")
+            # None means use default linear dependency; list means explicit dependencies
+            dsl_depends_on, step_content = self._parse_step_dsl_list(step_content, 'depends_on')
+
             steps.append({
                 "id": f"step_{step_num}",
                 "title": step_title,
                 "content": step_content,
+                "capabilities": step_capabilities,
+                "allowed_skills": allowed_skills,
+                "dsl_query_label": dsl_query_label,
+                "depends_on": dsl_depends_on,
             })
 
         return steps
+
+    async def _generate_query_labels_with_llm(
+        self, steps: list[dict[str, Any]], user_query: str
+    ) -> list[str]:
+        """Generate appropriate query labels for all workflow steps using LLM.
+
+        Called once after parsing workflow to batch generate labels that determine
+        how the user's question should be presented to each step.
+
+        Args:
+            steps: Parsed workflow steps with title and content
+            user_query: User's original request
+
+        Returns:
+            List of query_label strings, one per step. Possible values:
+            - Descriptive label like "分析此问题的意图和数据需求"
+            - "none" if the step doesn't need to see the user query
+        """
+        if not steps:
+            return []
+
+        # Build step descriptions for LLM
+        step_descriptions = "\n".join(
+            f"步骤 {i+1}: {s['title']}\n目标: {s['content'][:200]}..."
+            for i, s in enumerate(steps)
+        )
+
+        prompt = f"""你是一个任务规划助手。用户提出了一个问题，系统会分多个步骤来处理。
+
+用户问题：{user_query}
+
+以下是处理步骤：
+
+{step_descriptions}
+
+请为每个步骤生成一个合适的"用户问题呈现标签"(query_label)，用于告诉执行该步骤的 AI 应该如何理解用户问题。
+
+规则：
+1. 如果该步骤需要**分析/理解**用户问题（不直接回答），标签应该强调"分析"而非"回答"
+   - 例如："分析此问题的意图和数据需求"
+2. 如果该步骤需要**收集/探查数据**，用户问题只是参考背景
+   - 例如："背景参考"
+3. 如果该步骤需要**直接回答/处理**用户问题，标签应该明确回答
+   - 例如："根据数据回答以下问题"
+4. 如果该步骤**不需要**看用户原始问题（如生成报告、制定措施），返回 "none"
+
+请以 JSON 数组格式返回，每个元素是对应步骤的标签字符串：
+["步骤1标签", "步骤2标签", ...]
+
+只返回 JSON 数组，不要有其他内容。
+"""
+        try:
+            response = await self._model.ainvoke(prompt)
+            raw_content = response.content if hasattr(response, 'content') else str(response)
+
+            # Handle both string and list content types
+            if isinstance(raw_content, str):
+                content = raw_content
+            elif isinstance(raw_content, list):
+                # For list content (multimodal), extract text parts
+                content = "".join(
+                    str(item) if isinstance(item, str) else item.get("text", "")
+                    for item in raw_content
+                    if isinstance(item, (str, dict))
+                )
+            else:
+                content = str(raw_content)
+
+            # Parse JSON response
+            import json
+            # Handle potential markdown code blocks
+            if '```' in content:
+                import re
+                json_match = re.search(r'```(?:json)?\s*(.*?)```', content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(1)
+
+            labels = json.loads(content.strip())
+
+            # Validate length matches steps
+            if len(labels) != len(steps):
+                logger.warning(
+                    f"[_generate_query_labels_with_llm] Label count mismatch: "
+                    f"got {len(labels)}, expected {len(steps)}"
+                )
+                # Pad or truncate
+                while len(labels) < len(steps):
+                    labels.append("用户请求")
+                labels = labels[:len(steps)]
+
+            logger.info(f"[_generate_query_labels_with_llm] Generated labels: {labels}")
+            return labels
+
+        except Exception as e:
+            logger.warning(f"[_generate_query_labels_with_llm] Failed: {e}")
+            # Fallback to default labels
+            return ["用户请求"] * len(steps)
+
+    def _build_user_query_section(self, user_args: str, query_label: str) -> str:
+        """Build user query section for step prompt based on query_label.
+
+        Args:
+            user_args: User's original request/arguments
+            query_label: How to present the query (or "none" to hide)
+
+        Returns:
+            Formatted section string, or empty string if query_label is "none"
+        """
+        if query_label.lower() == "none":
+            return ""
+        return f"## {query_label}\n{user_args}\n"
 
     def _step_needs_context(self, step_content: str, context_type: str) -> bool:
         """Determine if a step needs specific context type.
@@ -833,11 +1026,38 @@ class AIMEPlanner:
 
         return "\n".join(forbidden) if forbidden else "- 无特殊限制"
 
+    def _filter_skill_instructions(
+        self, skill_instructions: str, allowed_skills: list[str]
+    ) -> str:
+        """Filter skill instructions to only include allowed skills.
+
+        Args:
+            skill_instructions: Full skill instructions string
+            allowed_skills: List of allowed skill names
+
+        Returns:
+            Filtered skill instructions containing only allowed skills
+        """
+        if not skill_instructions or not allowed_skills:
+            return ""
+
+        import re
+        filtered_parts = []
+        # Match skill sections: ## [Skill: skill-name]\n...
+        skill_pattern = r'## \[Skill: ([^\]]+)\]\n(.*?)(?=## \[Skill:|$)'
+        matches = re.findall(skill_pattern, skill_instructions, re.DOTALL)
+
+        for skill_name, content in matches:
+            if skill_name.strip() in allowed_skills:
+                filtered_parts.append(f"## [Skill: {skill_name}]\n{content}")
+
+        return "\n\n".join(filtered_parts)
+
     async def _execute_command_steps(
         self,
         command_name: str,
         user_args: str,
-        workflow_steps: list[dict[str, str]],
+        workflow_steps: list[dict[str, Any]],
         agent_name: str | None,
         thread_id: str,
         event_id: int,
@@ -847,12 +1067,15 @@ class AIMEPlanner:
         """Execute command workflow steps sequentially.
 
         Creates SubtaskSpecs for each step and executes them in order,
-        passing context between steps.
+        passing context between steps. Uses DSL declarations for:
+        - capabilities: Physical tool restrictions (Primary Defense)
+        - skills: Which skill instructions to inject
+        - query_label: How to present user query (Secondary Defense)
 
         Args:
             command_name: Name of the command being executed
             user_args: User's arguments to the command
-            workflow_steps: List of parsed workflow steps
+            workflow_steps: List of parsed workflow steps with DSL fields
             agent_name: Optional explicit agent name
             thread_id: Thread ID (original, used for persisting final result)
             event_id: Starting event ID
@@ -866,6 +1089,20 @@ class AIMEPlanner:
         # This significantly reduces prompt tokens (from ~100k to ~10k)
         command_thread_id = f"cmd-{command_name}-{uuid4().hex[:8]}"
 
+        # 0. Generate query labels using LLM (Secondary Defense)
+        # DSL-declared query_label takes priority over LLM-generated ones
+        llm_labels = await self._generate_query_labels_with_llm(workflow_steps, user_args)
+
+        # Merge: DSL label takes priority, otherwise use LLM-generated
+        for i, step in enumerate(workflow_steps):
+            if step.get("dsl_query_label"):
+                step["query_label"] = step["dsl_query_label"]
+            else:
+                step["query_label"] = llm_labels[i] if i < len(llm_labels) else "用户请求"
+            logger.info(
+                f"[_execute_command_steps] Step {i+1} query_label: {step['query_label']}"
+            )
+
         # 1. Create SubtaskSpecs for each step
         logger.info(
             f"[_execute_command_steps] Creating {len(workflow_steps)} subtasks, "
@@ -873,29 +1110,56 @@ class AIMEPlanner:
         )
         total_steps = len(workflow_steps)
         subtasks: list[SubtaskSpec] = []
+
         for i, step in enumerate(workflow_steps):
-            # Determine if this step needs file and skill context
-            step_needs_files = self._step_needs_context(step["content"], "files")
-            step_needs_skills = self._step_needs_context(step["content"], "skills")
+            # Get DSL-declared capabilities (Primary Defense)
+            step_capabilities = step.get("capabilities")  # None, [], or [...]
+            allowed_skills = step.get("allowed_skills")  # None, [], or [...]
 
-            # Only inject context when needed
+            # Determine if this step needs file context (based on capabilities)
+            # If capabilities restrict to text_only, no file section needed
+            step_needs_files = (
+                step_capabilities is None or  # Default: may need files
+                "file_read" in (step_capabilities or []) or
+                "code_execution" in (step_capabilities or [])
+            )
+
+            # Filter skill instructions based on DSL
+            if allowed_skills is None:
+                # Default: use heuristic-based detection
+                step_needs_skills = self._step_needs_context(step["content"], "skills")
+                current_skill_instructions = skill_instructions if step_needs_skills else ""
+            elif len(allowed_skills) == 0:
+                # skills: none - no skill instructions
+                current_skill_instructions = ""
+            else:
+                # skills: skill1, skill2 - filter to only allowed skills
+                current_skill_instructions = self._filter_skill_instructions(
+                    skill_instructions, allowed_skills
+                )
+
+            # Only inject file context when needed
             current_file_section = file_section if step_needs_files else ""
-            current_skill_instructions = skill_instructions if step_needs_skills else ""
 
-            # Get allowed and forbidden actions for this step
+            # Build user query section using query_label (Secondary Defense)
+            query_label = step.get("query_label", "用户请求")
+            user_query_section = self._build_user_query_section(user_args, query_label)
+
+            # Get allowed and forbidden actions for this step (informational only)
+            # The real enforcement is via capabilities -> tools filtering
             allowed_actions = self._get_allowed_actions(step)
             forbidden_actions = self._get_forbidden_actions(step, i, total_steps)
 
+            # Log capabilities for debugging
             logger.info(
-                f"[_execute_command_steps] Step {i+1}: needs_files={step_needs_files}, "
-                f"needs_skills={step_needs_skills}"
+                f"[_execute_command_steps] Step {i+1}: capabilities={step_capabilities}, "
+                f"allowed_skills={allowed_skills}, query_label={query_label}"
             )
 
+            # Build step description with query_label-based user query section
             step_description = f"""## 命令: /{command_name} - 步骤 {step['id']} (共 {total_steps} 步)
 
-## 用户原始请求
-{user_args}
-{current_file_section}
+{user_query_section}{current_file_section}
 ## 当前步骤: {step['title']}
 
 {step['content']}
@@ -921,11 +1185,28 @@ class AIMEPlanner:
                 f"[_execute_command_steps] Step {i+1} description length: {len(step_description)}, "
                 f"has skill_instructions: {bool(current_skill_instructions)}"
             )
+
+            # Determine dependencies: DSL-declared takes priority over default linear
+            dsl_depends_on = step.get("depends_on")
+            if dsl_depends_on is not None:
+                # DSL-declared dependencies (empty list = no deps, list = specific deps)
+                # Map step IDs (e.g., "step_1") to actual subtask IDs
+                step_depends_on: list[str] = []
+                for dep_step_id in dsl_depends_on:
+                    # Find the subtask with matching step ID
+                    for j, prev_step in enumerate(workflow_steps[:i]):
+                        if prev_step["id"] == dep_step_id and j < len(subtasks):
+                            step_depends_on.append(subtasks[j].id)
+                            break
+            else:
+                # Default: linear dependency (step N depends on step N-1)
+                step_depends_on = [subtasks[i - 1].id] if i > 0 else []
+
             spec = SubtaskSpec(
                 id=f"cmd-{command_name}-{step['id']}-{uuid4().hex[:8]}",
                 description=step_description,
                 explicit_agent=agent_name,
-                depends_on=[subtasks[i - 1].id] if i > 0 else [],
+                depends_on=step_depends_on,
             )
             subtasks.append(spec)
 
@@ -933,8 +1214,10 @@ class AIMEPlanner:
         for spec in subtasks:
             self.progress_manager.add_task(spec)
 
-        # 3. Select actor once (all steps use same agent)
-        actor = await self.actor_factory.select_actor(subtasks[0])
+        # 3. Select actor for first step (used for task_spawned events)
+        # Note: Actual actor selection per-step happens in execution loop
+        first_step_capabilities = workflow_steps[0].get("capabilities") if workflow_steps else None
+        actor = await self.actor_factory.select_actor(subtasks[0], first_step_capabilities)
 
         # 4. Emit thinking event with step count
         yield _format_sse(
@@ -963,7 +1246,11 @@ class AIMEPlanner:
             event_id += 1
 
         # 6. Execute steps sequentially
-        accumulated_context = ""
+        # Use dependency-based context passing instead of accumulated context
+        # Rule 1: Only pass outputs from depends_on tasks
+        # Rule 2: Command steps have linear dependency (step N depends on step N-1)
+        # Rule 3: User's original input is always passed (already in spec.description)
+        step_outputs: dict[str, str] = {}  # task_id -> output text
         all_results: list[dict[str, Any]] = []
         start_time = time.time()
 
@@ -971,16 +1258,41 @@ class AIMEPlanner:
             step = workflow_steps[i]
             step_start_time = time.time()
 
+            # Get step-specific capabilities (Primary Defense)
+            step_capabilities = step.get("capabilities")
+
+            # Select actor with step-specific capability restrictions
+            # This creates an actor with filtered tools based on capabilities
+            step_actor = await self.actor_factory.select_actor(spec, step_capabilities)
+            logger.info(
+                f"[_execute_command_steps] Step {i+1} actor: {step_actor.name}, "
+                f"tools: {[t.name for t in step_actor.tools] if step_actor.tools else 'none'}"
+            )
+
             # Emit task_started
             yield _format_sse("task_started", {"task_id": spec.id}, event_id)
             event_id += 1
 
-            self.progress_manager.start_task(spec.id, actor.name)
+            self.progress_manager.start_task(spec.id, step_actor.name)
 
-            # Build prompt with accumulated context from previous steps
+            # Build prompt with dependency-based context (only from depends_on tasks)
             task_message = spec.description
-            if accumulated_context:
-                task_message += f"\n\n## 前序步骤结果\n\n{accumulated_context}"
+
+            # Rule 1+2: Only pass outputs from depends_on tasks (not all accumulated history)
+            if spec.depends_on:
+                context_parts: list[str] = []
+                for dep_id in spec.depends_on:
+                    if dep_id in step_outputs:
+                        # Find the dependency step's title for better context
+                        dep_index = next(
+                            (j for j, s in enumerate(subtasks) if s.id == dep_id),
+                            None
+                        )
+                        dep_title = workflow_steps[dep_index]["title"] if dep_index is not None else dep_id[:8]
+                        context_parts.append(f"### {dep_title}\n{step_outputs[dep_id]}")
+
+                if context_parts:
+                    task_message += f"\n\n## 前序步骤结果\n\n" + "\n\n".join(context_parts)
 
             # Get context prompt if available
             context_prompt = None
@@ -991,7 +1303,7 @@ class AIMEPlanner:
             result_text = ""
             tool_outputs: list[str] = []  # Collect tool outputs for context
             async for event in self._execute_actor(
-                actor,
+                step_actor,
                 task_message,
                 command_thread_id,
                 event_id,
@@ -1042,7 +1354,7 @@ class AIMEPlanner:
             # Track result for history
             all_results.append({
                 "task_id": spec.id,
-                "subagent_type": actor.name,
+                "subagent_type": step_actor.name,
                 "description": f"步骤 {i + 1}: {step['title']}",
                 "status": "success",
                 "duration_ms": step_duration_ms,
@@ -1050,13 +1362,13 @@ class AIMEPlanner:
                 "output": result_text[:1000] if result_text else None,
             })
 
-            # Add to accumulated context for next step (limit to prevent context overflow)
-            # Include tool outputs when available for better context passing
+            # Store step output for dependency-based context passing
+            # Only dependent steps will receive this output (not all subsequent steps)
             if tool_outputs:
                 tool_context = "\n\n---\n\n".join(tool_outputs)[:4000]
-                accumulated_context += f"\n### {step['title']}\n{result_text[:1500]}\n\n### 工具执行结果\n{tool_context}\n"
+                step_outputs[spec.id] = f"{result_text[:1500]}\n\n### 工具执行结果\n{tool_context}"
             else:
-                accumulated_context += f"\n### {step['title']}\n{result_text[:2000]}\n"
+                step_outputs[spec.id] = result_text[:2000]
 
             logger.info(
                 f"[_execute_command_steps] Step {i + 1}/{len(subtasks)} completed - "

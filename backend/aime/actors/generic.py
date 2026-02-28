@@ -87,16 +87,23 @@ def _build_generic_prompt() -> str:
     return _GENERIC_SYSTEM_PROMPT.format(skills_section=skills_section)
 
 
-def create_generic_actor(spec: SubtaskSpec | None = None) -> Actor:
+def create_generic_actor(
+    spec: SubtaskSpec | None = None,
+    step_capabilities: list[str] | None = None,
+) -> Actor:
     """Create a generic actor with standard tools.
 
     Args:
         spec: Optional subtask specification for context
+        step_capabilities: Optional step-level capability restrictions
+            - None: Use all tools (default)
+            - []: No tools (text_only mode)
+            - ["file_read", "code_execution"]: Only specified capabilities
 
     Returns:
         Generic Actor ready for execution
     """
-    from langchain_core.tools import tool
+    from langchain_core.tools import BaseTool, tool
 
     @tool
     def activate_skill(skill_name: str) -> str:
@@ -116,14 +123,42 @@ def create_generic_actor(spec: SubtaskSpec | None = None) -> Actor:
             return skill.load_instructions()
         return f"Unknown skill: {skill_name}. Available: {', '.join(SKILL_REGISTRY.keys())}"
 
-    # Standard tools for generic actor
-    tools = [
-        execute_python,
-        execute_python_with_input,
-        execute_python_with_file,
-        read_file,  # Unified file reading tool
-        activate_skill,
-    ]
+    # Capability to tool mapping
+    capability_tool_map: dict[str, list[BaseTool]] = {
+        "file_read": [read_file],
+        "code_execution": [execute_python, execute_python_with_input, execute_python_with_file],
+        "skill_activation": [activate_skill],
+    }
+
+    # Filter tools based on step_capabilities
+    if step_capabilities is None:
+        # Default: all tools
+        tools: list[BaseTool] = [
+            execute_python,
+            execute_python_with_input,
+            execute_python_with_file,
+            read_file,
+            activate_skill,
+        ]
+    elif len(step_capabilities) == 0:
+        # text_only mode: no tools
+        tools = []
+        logger.info("[create_generic_actor] text_only mode - no tools")
+    else:
+        # Filter by capabilities
+        tools = []
+        for cap in step_capabilities:
+            if cap in capability_tool_map:
+                tools.extend(capability_tool_map[cap])
+        # Remove duplicates while preserving order
+        seen: set[str] = set()
+        unique_tools: list[BaseTool] = []
+        for t in tools:
+            if t.name not in seen:
+                seen.add(t.name)
+                unique_tools.append(t)
+        tools = unique_tools
+        logger.info(f"[create_generic_actor] capabilities={step_capabilities} -> tools={[t.name for t in tools]}")
 
     model = get_model("generic")
 
