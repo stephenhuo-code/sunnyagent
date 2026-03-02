@@ -48,7 +48,13 @@ _PLUGIN_AGENT_PROMPT = """\
    - `execute_python_with_input`: Execute code with input files
    - `execute_python_with_file`: Execute code with output files
 
-3. **Skill Activation** (`activate_skill`): Load specialized instructions
+3. **Data Profiling** (`data_profile`): Analyze CSV/Excel files
+   - Provides: row/column counts, column classification, value distributions
+   - Returns keyword matching results for specified terms
+   - **Preferred for data exploration** (instead of writing pandas code manually)
+   - Use this tool first when analyzing data files
+
+4. **Skill Activation** (`activate_skill`): Load specialized instructions
 
 ## Important Guidelines
 
@@ -102,8 +108,10 @@ CAPABILITY_TOOL_MAP: dict[str, list[str]] = {
         "execute_python",
         "execute_python_with_input",
         "execute_python_with_file",
+        "data_profile",  # Data profiling is a specialized code execution tool
     ],
     "skill_activation": ["activate_skill"],
+    "data_analysis": ["data_profile"],  # Also available as standalone capability
 }
 
 
@@ -130,6 +138,7 @@ def _create_plugin_tools(capabilities: list[str] | None = None) -> list[BaseTool
         execute_python_with_file,
         execute_python_with_input,
     )
+    from backend.tools.data_profile import data_profile
 
     # Map tool names to actual tool objects
     all_tools: dict[str, BaseTool] = {
@@ -138,6 +147,7 @@ def _create_plugin_tools(capabilities: list[str] | None = None) -> list[BaseTool
         "execute_python_with_input": execute_python_with_input,
         "execute_python_with_file": execute_python_with_file,
         "activate_skill": activate_skill,
+        "data_profile": data_profile,
     }
 
     # None = return all tools (default behavior)

@@ -126,7 +126,7 @@ class ContainerPool:
                 mounts=mounts,  # 只读挂载数据目录
                 mem_limit=self.mem_limit,
                 cpu_quota=self.cpu_quota,
-                network_disabled=True,  # 禁用网络访问
+                network_disabled=False,  # 启用网络（允许 pip install）
                 cap_drop=["ALL"],  # 移除所有 Linux capabilities
                 security_opt=["no-new-privileges"],  # 禁止提权
             ),
