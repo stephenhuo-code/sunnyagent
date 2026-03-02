@@ -29,9 +29,16 @@ class SkillEntry:
     _instructions: str | None = field(default=None, repr=False)
 
     def load_instructions(self) -> str:
-        """Lazily load and cache the full SKILL.md content."""
+        """Lazily load and cache the full SKILL.md content.
+
+        Replaces {skill_path} placeholder with the actual skill directory path,
+        allowing LLM to dynamically read script files using Read tool.
+        """
         if self._instructions is None:
-            self._instructions = (self.path / "SKILL.md").read_text()
+            content = (self.path / "SKILL.md").read_text()
+            # Replace path placeholder so LLM can read scripts dynamically
+            content = content.replace("{skill_path}", str(self.path))
+            self._instructions = content
         return self._instructions
 
 

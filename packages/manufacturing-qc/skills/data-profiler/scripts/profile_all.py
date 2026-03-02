@@ -1,36 +1,5 @@
----
-name: data-profiler
-description: 数据探查技能，分析数据结构、统计信息、值分布，并根据用户问题查找关键词
----
-
-# 数据探查技能
-
-## ⚠️ 强制约束（违反将导致探查失败）
-
-1. **必须调用工具执行代码** - 使用 `execute_python_with_input` 工具，不能只是描述或解释代码
-2. **必须等待执行结果** - 工具返回结果前禁止进行任何总结
-3. **必须看到完成标记** - 只有看到 "✅ 数据探查完成" 才算执行成功
-4. **禁止虚构任何数据** - 所有数字、列名、值分布必须来自代码输出
-
-❌ **错误示例**：描述"代码将输出行数、列数..."但不实际执行
-✅ **正确做法**：调用 execute_python_with_input 工具，等待并展示真实输出
-
-## 执行流程
-
-### 第一步：准备参数
-
-1. 从上下文 **"可用文件"** 部分获取 **容器路径**（如 `/data/project_files/xxx/file.csv`）
-2. 从用户问题提取关键词：
-   - **正确转换时间词** - 如"今年" → "2026年"，"上个月" → "2026年2月"，"去年" → "2025年"
-   - 提取关键实体（客户名、产品名等）
-   - 时间格式示例：`['小米', '2026年']` 或 `['华为', '2026年3月']`
-
-### 第二步：立即执行代码
-
-**将下方代码的 FILE_PATH 和 KEYWORDS 替换后，调用 execute_python_with_input 工具执行**：
-
-```python
 # 数据探查 - 一体化脚本
+# 用法：替换 FILE_PATH 和 KEYWORDS 后执行
 
 # 确保 tabulate 可用（pandas to_markdown 依赖）
 try:
@@ -45,12 +14,13 @@ import numpy as np
 import re
 
 # ========== 配置参数（执行前必须替换） ==========
-FILE_PATH = '/data/project_files/xxx/file.csv'  # ← 替换为实际容器路径
-KEYWORDS = ['小米', '2025年11月']  # ← 替换为用户问题中的关键词
+FILE_PATH = 'FILE_PATH'  # 替换为实际容器路径，如 '/data/project_files/xxx/file.csv'
+KEYWORDS = []  # 替换为用户问题中的关键词列表，如 ['小米', '2025年11月']
 
 # ========== 参数验证 ==========
 if FILE_PATH == 'FILE_PATH':
     print("❌ 错误：FILE_PATH 未被替换为实际路径")
+    print("请将 FILE_PATH = 'FILE_PATH' 改为实际的文件路径")
     exit(1)
 
 # ========== 读取数据 ==========
@@ -71,23 +41,34 @@ print(f"- **内存占用**: {df.memory_usage(deep=True).sum() / 1024:.1f} KB")
 print(f"- **列名**: {list(df.columns)}\n")
 
 # 列分类
-dimensions, metrics, time_cols, text_cols = [], [], [], []
+dimensions = []  # 维度列（分类变量）
+metrics = []     # 指标列（数值变量）
+time_cols = []   # 时间列
+text_cols = []   # 文本列
 
 for col in df.columns:
     try:
         series = df[col]
+
+        # 检测时间列 - 通过内容
         if series.dtype == 'object' and len(series.dropna()) > 0:
             sample = str(series.dropna().iloc[0])
             if re.search(r'\d{4}[-/]\d{2}[-/]\d{2}', sample):
                 time_cols.append(col)
                 continue
+
+        # 检测时间列 - 通过列名
         if any(kw in col.lower() for kw in ['日期', '时间', 'date', 'time', 'year', 'month']):
             time_cols.append(col)
             continue
+
+        # 数值列 → 指标
         if np.issubdtype(series.dtype, np.number):
             metrics.append(col)
+        # 分类变量（低基数）→ 维度
         elif series.nunique() <= 50:
             dimensions.append(col)
+        # 高基数文本 → 文本列
         else:
             text_cols.append(col)
     except Exception as e:
@@ -104,38 +85,65 @@ print("=" * 60)
 print("## 2. 关键列分析")
 print("=" * 60)
 
+# 优先分析维度列和时间列（与用户问题最相关）
 key_cols = dimensions + time_cols
-for col in key_cols[:15]:
+for col in key_cols[:15]:  # 最多分析15列
     try:
         series = df[col]
-        null_pct = series.isna().sum() / len(df) * 100 if len(df) > 0 else 0
+        null_count = series.isna().sum()
+        null_pct = null_count / len(df) * 100 if len(df) > 0 else 0
         unique_count = series.nunique()
-        print(f"\n### {col}")
-        print(f"- **类型**: {series.dtype}, **空值**: {null_pct:.1f}%, **唯一值**: {unique_count}")
-        if unique_count <= 20 and unique_count > 0:
-            dist = {str(k): int(v) for k, v in series.value_counts().head(10).items()}
-            print(f"- **值分布**: {dist}")
-        if series.dtype == 'object' and len(series.dropna()) > 0:
-            sample = str(series.dropna().iloc[0])
-            if re.search(r'\d{4}[-/]\d{2}[-/]\d{2}', sample):
-                dates = pd.to_datetime(series, errors='coerce').dropna()
-                if len(dates) > 0:
-                    print(f"- **日期范围**: {dates.min()} 至 {dates.max()}")
-    except Exception as e:
-        print(f"\n### {col}\n- ❌ 分析失败: {e}")
 
-for col in metrics[:10]:
+        print(f"\n### {col}")
+        print(f"- **类型**: {series.dtype}")
+        print(f"- **空值**: {null_count} ({null_pct:.1f}%)")
+        print(f"- **唯一值**: {unique_count}")
+
+        # 值分布（低基数列）
+        if unique_count <= 20 and unique_count > 0:
+            value_counts = series.value_counts().head(10)
+            dist = {str(k): int(v) for k, v in value_counts.items()}
+            print(f"- **值分布**: {dist}")
+
+        # 日期范围检测
+        if series.dtype == 'object':
+            non_null = series.dropna()
+            if len(non_null) > 0:
+                sample = str(non_null.iloc[0])
+                if re.search(r'\d{4}[-/]\d{2}[-/]\d{2}', sample):
+                    dates = pd.to_datetime(series, errors='coerce')
+                    valid_dates = dates.dropna()
+                    if len(valid_dates) > 0:
+                        print(f"- **日期范围**: {valid_dates.min()} 至 {valid_dates.max()}")
+    except Exception as e:
+        print(f"\n### {col}")
+        print(f"- ❌ 分析失败: {e}")
+
+# 分析指标列（数值统计）
+for col in metrics[:10]:  # 最多分析10个指标列
     try:
         series = df[col]
-        null_pct = series.isna().sum() / len(df) * 100 if len(df) > 0 else 0
-        non_null = series.dropna()
+        null_count = series.isna().sum()
+        null_pct = null_count / len(df) * 100 if len(df) > 0 else 0
+
         print(f"\n### {col}")
-        print(f"- **类型**: {series.dtype}, **空值**: {null_pct:.1f}%")
+        print(f"- **类型**: {series.dtype}")
+        print(f"- **空值**: {null_count} ({null_pct:.1f}%)")
+
+        non_null = series.dropna()
         if len(non_null) > 0:
-            stats = f"min={non_null.min():.2f}, max={non_null.max():.2f}, mean={non_null.mean():.2f}"
-            print(f"- **统计**: {stats}")
+            stats = [
+                f"min={non_null.min():.2f}",
+                f"max={non_null.max():.2f}",
+                f"mean={non_null.mean():.2f}",
+                f"median={non_null.median():.2f}"
+            ]
+            if len(non_null) > 1:
+                stats.append(f"std={non_null.std():.2f}")
+            print(f"- **统计**: {', '.join(stats)}")
     except Exception as e:
-        print(f"\n### {col}\n- ❌ 分析失败: {e}")
+        print(f"\n### {col}")
+        print(f"- ❌ 分析失败: {e}")
 
 print()
 
@@ -147,14 +155,15 @@ print(df.head(5).to_markdown(index=False))
 print()
 
 # ========== 第四阶段：关键词匹配 ==========
-print("=" * 60)
-print("## 4. 关键词匹配结果")
-print("=" * 60)
+if KEYWORDS and len(KEYWORDS) > 0 and KEYWORDS != ["关键词1", "关键词2"]:
+    print("=" * 60)
+    print("## 4. 关键词匹配结果")
+    print("=" * 60)
 
-if KEYWORDS:
     for kw in KEYWORDS:
         print(f'\n### 关键词: "{kw}"')
         found = False
+
         # 搜索所有列，不限 dtype
         for col in df.columns:
             try:
@@ -162,11 +171,13 @@ if KEYWORDS:
                 mask = col_str.str.contains(kw, case=False, na=False)
                 if mask.sum() > 0:
                     samples = df.loc[mask, col].head(3).tolist()
-                    print(f"- **{col}**: {mask.sum()} 行匹配, 示例: {samples}")
+                    print(f"- **{col}**: {mask.sum()} 行匹配")
+                    print(f"  示例值: {samples}")
                     found = True
             except Exception:
                 continue
-        # 年份处理
+
+        # 年份特殊处理
         if kw.isdigit() and len(kw) == 4:
             for col in df.columns:
                 if '日期' in col or '时间' in col or 'date' in col.lower():
@@ -178,7 +189,8 @@ if KEYWORDS:
                             found = True
                     except Exception:
                         continue
-        # 年月格式处理
+
+        # 年月格式处理，如 "2025年11月"
         year_month_match = re.match(r'(\d{4})年(\d{1,2})月', kw)
         if year_month_match:
             year, month = int(year_month_match.group(1)), int(year_month_match.group(2))
@@ -192,36 +204,19 @@ if KEYWORDS:
                             found = True
                     except Exception:
                         continue
+
         if not found:
             print(f"- ⚠️ 未找到匹配数据")
-else:
-    print("\n- 未提供关键词，跳过关键词匹配")
 
-print()
+    print()
+else:
+    print("=" * 60)
+    print("## 4. 关键词匹配")
+    print("=" * 60)
+    print("- 未提供关键词，跳过关键词匹配阶段")
+    print("- 如需查找特定数据，请在 KEYWORDS 列表中添加关键词")
+    print()
+
 print("=" * 60)
 print("✅ 数据探查完成")
 print("=" * 60)
-```
-
-### 第三步：验证执行结果
-
-代码执行后，**检查输出中是否包含**：
-
-- [ ] `✅ 成功读取文件：X 行, Y 列` - 确认文件已读取
-- [ ] `## 1. 数据集概要` - 有行数、列数、列名
-- [ ] `## 2. 关键列分析` - 有空值率、唯一值、值分布
-- [ ] `## 3. 数据样本` - 有前5行表格
-- [ ] `## 4. 关键词匹配结果` - 有匹配的列和行数
-- [ ] `✅ 数据探查完成` - 执行成功标记
-
-**如果缺少任何一项，说明执行失败，需要重试。**
-
-### 第四步：基于真实输出继续分析
-
-根据代码输出的**实际数据**（不是假设的数据）进行后续分析。
-
-## 重要提示
-
-- 使用上下文 **"可用文件"** 部分的 **容器路径**（如 `/data/project_files/xxx/file.csv`）
-- **禁止**使用本地路径（如 `/Users/...`）
-- 如果执行失败，检查路径是否正确后重试

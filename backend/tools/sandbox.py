@@ -432,7 +432,7 @@ async def execute_python(
         elif text_output:
             return text_output
         else:
-            return "执行完成，无输出"
+            return "代码执行成功 (exit_code=0)。提示：如需查看计算结果，请在代码中使用 print() 输出。"
 
     except Exception as e:
         return f"执行异常: {str(e)}"
@@ -750,7 +750,7 @@ async def execute_python_with_input(
             result_text = output if output else "执行完成"
             return f"{result_text}\n\n✅ 文件已生成\n\n[📥 点击下载 {output_filename}]({download_url})"
 
-        return output if output else "执行完成，无输出"
+        return output if output else "代码执行成功 (exit_code=0)。提示：如需查看计算结果，请在代码中使用 print() 输出。"
 
     except Exception as e:
         return f"❌ 执行异常: {str(e)}"
