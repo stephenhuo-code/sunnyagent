@@ -27,7 +27,6 @@ import re
 
 # ========== 配置参数 ==========
 FILE_PATH = {file_path!r}
-KEYWORDS = {keywords!r}
 
 # ========== 读取数据 ==========
 try:
@@ -60,9 +59,9 @@ for col in df.columns:
         if any(kw in col.lower() for kw in ['日期', '时间', 'date', 'time', 'year', 'month']):
             time_cols.append(col)
             continue
-        if np.issubdtype(series.dtype, np.number):
+        if pd.api.types.is_numeric_dtype(series):
             metrics.append(col)
-        elif series.nunique() <= 50:
+        elif series.nunique() <= 200:
             dimensions.append(col)
         else:
             text_cols.append(col)
@@ -88,9 +87,13 @@ for col in key_cols[:15]:
         unique_count = series.nunique()
         print(f"\\n### {{col}}")
         print(f"- **类型**: {{series.dtype}}, **空值**: {{null_pct:.1f}}%, **唯一值**: {{unique_count}}")
-        if unique_count <= 20 and unique_count > 0:
-            dist = {{str(k): int(v) for k, v in series.value_counts().head(10).items()}}
-            print(f"- **值分布**: {{dist}}")
+        if unique_count > 0:
+            top_values = series.value_counts().head(10)
+            dist = {{str(k): int(v) for k, v in top_values.items()}}
+            if unique_count > 10:
+                print(f"- **Top 10 值分布** (共 {{unique_count}} 个值): {{dist}}")
+            else:
+                print(f"- **值分布**: {{dist}}")
         if series.dtype == 'object' and len(series.dropna()) > 0:
             sample = str(series.dropna().iloc[0])
             if re.search(r'\\d{{4}}[-/]\\d{{2}}[-/]\\d{{2}}', sample):
@@ -113,6 +116,21 @@ for col in metrics[:10]:
     except Exception as e:
         print(f"\\n### {{col}}\\n- ❌ 分析失败: {{e}}")
 
+# 文本列分析（高唯一值的列）
+if text_cols:
+    print("\\n**文本列分析**:")
+    for col in text_cols[:10]:
+        try:
+            series = df[col]
+            null_pct = series.isna().sum() / len(df) * 100 if len(df) > 0 else 0
+            unique_count = series.nunique()
+            sample = str(series.dropna().iloc[0])[:50] if len(series.dropna()) > 0 else "N/A"
+            print(f"\\n### {{col}}")
+            print(f"- **类型**: 文本, **空值**: {{null_pct:.1f}}%, **唯一值**: {{unique_count}}")
+            print(f"- **示例**: {{sample}}...")
+        except Exception as e:
+            print(f"\\n### {{col}}\\n- ❌ 分析失败: {{e}}")
+
 print()
 
 # ========== 第三阶段：数据样本 ==========
@@ -122,58 +140,20 @@ print("=" * 60)
 print(df.head(5).to_markdown(index=False))
 print()
 
-# ========== 第四阶段：关键词匹配 ==========
+# ========== 第四阶段：维度列值统计 ==========
 print("=" * 60)
-print("## 4. 关键词匹配结果")
+print("## 4. 维度列值统计")
 print("=" * 60)
-
-if KEYWORDS:
-    for kw in KEYWORDS:
-        print(f'\\n### 关键词: "{{kw}}"')
-        found = False
-        # 搜索所有列，不限 dtype
-        for col in df.columns:
-            try:
-                col_str = df[col].astype(str)
-                mask = col_str.str.contains(kw, case=False, na=False)
-                if mask.sum() > 0:
-                    samples = df.loc[mask, col].head(3).tolist()
-                    print(f"- **{{col}}**: {{mask.sum()}} 行匹配, 示例: {{samples}}")
-                    found = True
-            except Exception:
-                continue
-        # 年份处理
-        if kw.isdigit() and len(kw) == 4:
-            for col in df.columns:
-                if '日期' in col or '时间' in col or 'date' in col.lower():
-                    try:
-                        dates = pd.to_datetime(df[col], errors='coerce')
-                        mask = dates.dt.year == int(kw)
-                        if mask.sum() > 0:
-                            print(f"- **{{col}}** (日期列): {{mask.sum()}} 行属于 {{kw}} 年")
-                            found = True
-                    except Exception:
-                        continue
-        # 年月格式处理
-        year_month_match = re.match(r'(\\d{{4}})年(\\d{{1,2}})月', kw)
-        if year_month_match:
-            year, month = int(year_month_match.group(1)), int(year_month_match.group(2))
-            for col in df.columns:
-                if '日期' in col or '时间' in col or 'date' in col.lower():
-                    try:
-                        dates = pd.to_datetime(df[col], errors='coerce')
-                        mask = (dates.dt.year == year) & (dates.dt.month == month)
-                        if mask.sum() > 0:
-                            print(f"- **{{col}}** (日期列): {{mask.sum()}} 行属于 {{year}}年{{month}}月")
-                            found = True
-                    except Exception:
-                        continue
-        if not found:
-            print(f"- ⚠️ 未找到匹配数据")
-else:
-    print("\\n- 未提供关键词，跳过关键词匹配")
-
+for col in dimensions[:10]:
+    try:
+        vc = df[col].value_counts()
+        top5 = dict(vc.head(5).items())
+        suffix = ' ...' if len(vc) > 5 else ''
+        print(f"- **{{col}}**: {{top5}}{{suffix}}")
+    except Exception:
+        pass
 print()
+
 print("=" * 60)
 print("✅ 数据探查完成")
 print("=" * 60)
@@ -216,7 +196,6 @@ def _host_path_to_container_path(host_path: str) -> str | None:
 @tool
 async def data_profile(
     file_path: str,
-    keywords: list[str] | None = None,
 ) -> str:
     """
     数据探查工具 - 分析 CSV 文件的数据结构、统计信息、值分布。
@@ -225,18 +204,16 @@ async def data_profile(
     - 数据集概要（行数、列数、内存占用）
     - 列分类（维度、指标、时间、文本）
     - 关键列分析（空值率、唯一值、值分布）
-    - 数据样本（前5行）
-    - 关键词匹配结果
+    - 文本列分析（高唯一值列的基本信息）
+    - 数据样本（前50行）
 
     Args:
         file_path: 文件路径，支持以下格式：
             - 容器路径：/data/project_files/xxx/file.csv
             - 主机路径：/Users/.../data/project_files/xxx/file.csv
-        keywords: 要搜索的关键词列表，如 ['小米', '2025年11月']
-            注意：时间词需要转换为具体值，如"今年"→"2026年"
 
     Returns:
-        探查结果，包含数据概要、列分析、样本、关键词匹配
+        探查结果，包含数据概要、列分析、样本数据
         成功时会包含 "✅ 数据探查完成" 标记
     """
     # 转换路径为容器路径
@@ -249,16 +226,12 @@ async def data_profile(
         if not Path(file_path).exists():
             return f"❌ 文件不存在: {file_path}"
 
-    # 准备关键词
-    kw_list = keywords or []
-
     # 生成探查脚本
     code = _PROFILE_SCRIPT.format(
         file_path=container_path,
-        keywords=kw_list,
     )
 
-    logger.info(f"[data_profile] Executing profile for: {container_path}, keywords={kw_list}")
+    logger.info(f"[data_profile] Executing profile for: {container_path}")
 
     # 在容器中执行
     pool = await get_pool()

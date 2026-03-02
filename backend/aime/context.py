@@ -158,6 +158,7 @@ class AgentContext:
         """Build context prompt for injection into message.
 
         Generates a formatted prompt containing:
+        - Current date (critical for time-related queries)
         - Session information (user, project)
         - Available files (metadata only)
 
@@ -165,6 +166,10 @@ class AgentContext:
             Formatted context prompt, or empty string if no context.
         """
         parts = []
+
+        # Current date (critical for time-related queries)
+        current_date = self.session.timestamp.strftime("%Y年%m月%d日")
+        parts.append(f"[当前日期]\n今天是 {current_date}")
 
         # Session info
         session_info = f"[会话信息]\nUser: {self.session.user_id}"

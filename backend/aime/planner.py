@@ -1332,7 +1332,7 @@ class AIMEPlanner:
                     if event_type == "tool_call_result":
                         tool_name = data.get("name", "")
                         tool_output = data.get("output", "")
-                        if tool_name in ("execute_python", "execute_python_with_input") and tool_output:
+                        if tool_name in ("execute_python", "execute_python_with_input", "data_profile") and tool_output:
                             tool_outputs.append(tool_output)
 
             # Complete step
@@ -1365,7 +1365,7 @@ class AIMEPlanner:
             # Store step output for dependency-based context passing
             # Only dependent steps will receive this output (not all subsequent steps)
             if tool_outputs:
-                tool_context = "\n\n---\n\n".join(tool_outputs)[:4000]
+                tool_context = "\n\n---\n\n".join(tool_outputs)[:8000]
                 step_outputs[spec.id] = f"{result_text[:1500]}\n\n### 工具执行结果\n{tool_context}"
             else:
                 step_outputs[spec.id] = result_text[:2000]
