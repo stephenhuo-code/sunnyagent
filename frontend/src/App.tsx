@@ -2,15 +2,17 @@ import { useState, useCallback, useEffect } from "react";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { useConversations } from "./hooks/useConversations";
 import { useProjects } from "./hooks/useProjects";
-import { useSkills } from "./hooks/useSkills";
 import { LoginPage } from "./components/Auth/LoginPage";
 import { MainLayout } from "./components/Layout/MainLayout";
 import { ConversationList } from "./components/Conversations";
 import { AdminPanel } from "./components/Admin";
 import ChatContainer from "./components/ChatContainer";
 import { ProjectList, ProjectHome, ProjectWorkspace } from "./components/Projects";
+import { PluginsPage } from "./pages/PluginsPage";
 import { Loader2, X } from "lucide-react";
 import { getConversation } from "./api/conversations";
+import { getCommands } from "./api/client";
+import type { Command } from "./types";
 
 type View = "chat" | "project";
 
@@ -22,22 +24,38 @@ function AppContent() {
   const [showProjectHome, setShowProjectHome] = useState(true);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showPluginsModal, setShowPluginsModal] = useState(false);
 
   const conversations = useConversations();
   const projects = useProjects();
-  const { skills } = useSkills();
+  const [commands, setCommands] = useState<Command[]>([]);
   const [createProjectTrigger, setCreateProjectTrigger] = useState(0);
 
-  // Close admin modal on Escape key
+  // Fetch commands from enabled plugins
+  const refreshCommands = useCallback(async () => {
+    try {
+      const cmds = await getCommands();
+      setCommands(cmds);
+    } catch {
+      // Silently fail - commands will be empty
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCommands();
+  }, [refreshCommands]);
+
+  // Close modals on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && showAdminModal) {
-        setShowAdminModal(false);
+      if (e.key === "Escape") {
+        if (showAdminModal) setShowAdminModal(false);
+        if (showPluginsModal) setShowPluginsModal(false);
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [showAdminModal]);
+  }, [showAdminModal, showPluginsModal]);
 
   // Restore selected conversation on page load
   useEffect(() => {
@@ -253,6 +271,17 @@ function AppContent() {
     setCreateProjectTrigger(prev => prev + 1);
   }, []);
 
+  // Handle showing plugins modal
+  const handleShowPlugins = useCallback(() => {
+    setShowPluginsModal(true);
+  }, []);
+
+  // Handle closing plugins modal and refresh commands
+  const handleClosePluginsModal = useCallback(() => {
+    setShowPluginsModal(false);
+    refreshCommands();
+  }, [refreshCommands]);
+
   if (isLoading) {
     return (
       <div className="loading-screen">
@@ -313,6 +342,7 @@ function AppContent() {
       <MainLayout
         onNewConversation={handleNewConversation}
         onShowAdmin={handleShowAdmin}
+        onShowPlugins={handleShowPlugins}
         conversationList={renderConversationList}
         projectsSection={renderProjectsList}
         conversations={conversations.historyConversations}
@@ -339,7 +369,7 @@ function AppContent() {
               files={projects.files}
               conversations={projects.getConversations(currentProject.id)}
               conversationsLoading={projects.isConversationsLoading(currentProject.id)}
-              skills={skills}
+              commands={commands}
               onCreateConversation={handleCreateConversationFromHome}
               onSelectConversation={(convId) => handleProjectConversationSelect(convId, currentProject.id)}
               onUploadFile={handleUploadFileFromHome}
@@ -379,6 +409,22 @@ function AppContent() {
               <X size={20} />
             </button>
             <AdminPanel />
+          </div>
+        </div>
+      )}
+
+      {/* Plugins Modal */}
+      {showPluginsModal && (
+        <div className="plugins-modal-overlay" onClick={handleClosePluginsModal}>
+          <div className="plugins-modal-container" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="plugins-modal-close"
+              onClick={handleClosePluginsModal}
+              aria-label="Close plugins panel"
+            >
+              <X size={20} />
+            </button>
+            <PluginsPage />
           </div>
         </div>
       )}

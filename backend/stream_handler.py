@@ -13,6 +13,7 @@ Enhanced with support for:
 """
 
 import json
+import logging
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables.config import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -201,6 +204,12 @@ async def stream_agent_response(
     # Previous todos state for change detection (T005, T006)
     previous_todos: list[dict] | None = None
 
+    logger.info(
+        f"[stream_agent_response] Starting - thread_id={thread_id}, "
+        f"message_len={len(message)}, task_id={task_id}"
+    )
+
+    chunk_count = 0
     try:
         async for chunk in agent.astream(
             stream_input,
@@ -208,10 +217,18 @@ async def stream_agent_response(
             subgraphs=True,
             config=config,
         ):
+            chunk_count += 1
             if not isinstance(chunk, tuple) or len(chunk) != 3:
+                logger.debug(f"[stream_agent_response] Chunk {chunk_count}: invalid format")
                 continue
 
             namespace, current_stream_mode, data = chunk
+            # Log first 5 chunks for debugging
+            if chunk_count <= 5:
+                logger.debug(
+                    f"[stream_agent_response] Chunk {chunk_count}: "
+                    f"mode={current_stream_mode}, ns={namespace[:50] if namespace else 'None'}"
+                )
 
             # --- UPDATES stream: process todos state changes (T005, T006) ---
             if current_stream_mode == "updates":
@@ -486,6 +503,8 @@ async def stream_agent_response(
         active_tasks.clear()
 
     except Exception as e:
+        logger.exception(f"[stream_agent_response] Error during streaming: {e}")
         yield _format_sse("error", {"message": str(e)}, event_counter)
 
+    logger.info(f"[stream_agent_response] Completed - total chunks: {chunk_count}")
     yield _format_sse("done", {}, event_counter)

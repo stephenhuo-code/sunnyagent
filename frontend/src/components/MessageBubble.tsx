@@ -1,10 +1,9 @@
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { User, Bot } from "lucide-react";
 import ToolCallCard from "./ToolCallCard";
 import ThinkingBubble from "./ThinkingBubble";
 import FileCard from "./FileCard";
 import TaskList from "./TaskList";
+import SafeMarkdown from "./SafeMarkdown";
 import type { Message, FileAttachment } from "../types";
 
 interface MessageBubbleProps {
@@ -72,7 +71,7 @@ export default function MessageBubble({ message, onFileClick }: MessageBubblePro
             {isUser ? (
               <p>{message.content}</p>
             ) : (
-              <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+              <SafeMarkdown>{message.content}</SafeMarkdown>
             )}
           </div>
         )}

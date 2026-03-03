@@ -1,7 +1,7 @@
 /**
  * Project home page - displayed when a project is selected
  * Shows project header, input for creating new conversations,
- * files/skills cards, and task (conversation) list
+ * files/commands cards, and task (conversation) list
  */
 
 import { useState, useCallback } from 'react';
@@ -12,10 +12,10 @@ import {
   Loader2,
   MessageSquare,
   FileText,
-  Zap,
+  Terminal,
 } from 'lucide-react';
 import type { ProjectDetail, ProjectConversationSummary } from '../../api/projects';
-import type { Skill, ProjectFile } from '../../types';
+import type { Command, ProjectFile } from '../../types';
 import './Projects.css';
 
 interface ProjectHomeProps {
@@ -23,7 +23,7 @@ interface ProjectHomeProps {
   files: ProjectFile[];
   conversations: ProjectConversationSummary[];
   conversationsLoading: boolean;
-  skills: Skill[];
+  commands: Command[];
   onCreateConversation: (message: string) => Promise<void>;
   onSelectConversation: (conversationId: string) => void;
   onUploadFile: () => void;
@@ -34,7 +34,7 @@ export function ProjectHome({
   files,
   conversations,
   conversationsLoading,
-  skills,
+  commands,
   onCreateConversation,
   onSelectConversation,
   onUploadFile,
@@ -134,10 +134,10 @@ export function ProjectHome({
           </div>
         </div>
 
-        {/* Cards: Files + Skills */}
+        {/* Cards: Files + Commands */}
         <div className="project-home-cards">
           <FilesCard files={files} onUpload={onUploadFile} />
-          <SkillsCard skills={skills} />
+          <CommandsCard commands={commands} />
         </div>
 
         {/* Conversations List */}
@@ -201,26 +201,26 @@ function FilesCard({ files, onUpload }: FilesCardProps) {
   );
 }
 
-interface SkillsCardProps {
-  skills: Skill[];
+interface CommandsCardProps {
+  commands: Command[];
 }
 
-function SkillsCard({ skills }: SkillsCardProps) {
+function CommandsCard({ commands }: CommandsCardProps) {
   return (
     <div className="project-card">
       <div className="project-card-header">
-        <span>技能</span>
+        <span>指令</span>
         <button disabled type="button">
           <Plus size={16} />
         </button>
       </div>
       <div className="project-card-content">
-        {skills.length === 0 ? (
+        {commands.length === 0 ? (
           <span className="card-empty">
-            <Zap size={14} /> 没有技能
+            <Terminal size={14} /> 没有可用指令
           </span>
         ) : (
-          <span className="card-count">系统中 {skills.length} 个可用技能</span>
+          <span className="card-count">{commands.length} 个可用指令</span>
         )}
       </div>
     </div>

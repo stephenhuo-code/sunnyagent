@@ -1,4 +1,4 @@
-import type { Agent, Skill, SSEEvent, UploadedFile } from "../types";
+import type { Agent, Command, Skill, SSEEvent, UploadedFile } from "../types";
 
 /**
  * Stream chat responses from the backend via SSE.
@@ -85,6 +85,15 @@ export async function getSkills(): Promise<Skill[]> {
   return response.json();
 }
 
+/** Fetch commands from enabled plugins for the current user. */
+export async function getCommands(): Promise<Command[]> {
+  const response = await fetch("/api/commands", { credentials: "include" });
+  if (!response.ok) {
+    throw new Error("Failed to fetch commands");
+  }
+  return response.json();
+}
+
 /** Upload a file with progress tracking. */
 export function uploadFile(
   file: File,
@@ -133,8 +142,41 @@ export async function getFileContent(fileId: string): Promise<{ content: string;
   return response.json();
 }
 
+/** History message with full metadata */
+export interface HistoryMessage {
+  role: string;
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    status: string;
+  }>;
+  thinking_steps?: Array<{
+    type?: "planning" | "replanning" | "routing";
+    content: string;
+    timestamp: number;
+  }>;
+  spawned_tasks?: Array<{
+    task_id: string;
+    subagent_type: string;
+    description: string;
+    status: "pending" | "running" | "success" | "error" | "failed" | "cancelled";
+    duration_ms?: number;
+    toolCalls?: Array<{
+      id: string;
+      name: string;
+      args: Record<string, unknown>;
+      status: string;
+      output?: string;
+    }>;
+    output?: string;
+  }>;
+  display_scenario?: "quick" | "agent" | "planning";
+}
+
 /** Fetch thread message history. */
-export async function getThreadHistory(threadId: string): Promise<{ messages: { role: string; content: string }[] }> {
+export async function getThreadHistory(threadId: string): Promise<{ messages: HistoryMessage[] }> {
   const response = await fetch(`/api/threads/${threadId}/history`, {
     credentials: "include",
   });

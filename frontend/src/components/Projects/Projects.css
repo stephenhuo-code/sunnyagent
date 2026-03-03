@@ -817,6 +817,11 @@
   height: 100%;
 }
 
+/* Fix: Override chat-layout height in project workspace */
+.project-chat .chat-layout {
+  height: 100%;
+}
+
 /* Fix: Override chat-container height in project workspace */
 .project-chat .chat-container {
   height: 100%;
@@ -1097,16 +1102,22 @@
 }
 
 .source-menu {
-  position: absolute;
-  left: 0;
-  top: 100%;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  position: fixed;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
   min-width: 120px;
   overflow: hidden;
+  padding: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-menu {
+    background: #1e293b;
+    border-color: #334155;
+  }
 }
 
 .source-menu button {
@@ -1114,25 +1125,52 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   background: none;
   border: none;
+  border-radius: 6px;
   text-align: left;
   cursor: pointer;
-  color: var(--text-primary);
-  font-size: 13px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-menu button {
+    color: #e5e7eb;
+  }
 }
 
 .source-menu button:hover {
-  background: var(--hover-bg);
+  background: #f3f4f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-menu button:hover {
+    background: #334155;
+  }
 }
 
 .source-menu button.danger {
-  color: var(--error-color, #ef4444);
+  color: #dc2626;
 }
 
 .source-menu button.danger:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .source-menu button.danger {
+    color: #f87171;
+  }
+
+  .source-menu button.danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+  }
 }
 
 /* =============================================================================

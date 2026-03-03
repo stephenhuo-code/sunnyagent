@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from "react";
-import { createThread, streamChat, getThreadHistory } from "../api/client";
+import { createThread, streamChat, getThreadHistory, type HistoryMessage } from "../api/client";
 import type { Message, ThinkingState, ToolCall, UploadedFile, DisplayScenario, SpawnedTask } from "../types";
 
 let msgCounter = 0;
@@ -434,11 +434,71 @@ export function useChat(options: UseChatOptions = {}) {
     try {
       const history = await getThreadHistory(newThreadId);
       if (history.messages && history.messages.length > 0) {
-        const loadedMessages: Message[] = history.messages.map((msg: { role: string; content: string }, index: number) => ({
-          id: `history-${index}`,
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        }));
+        const loadedMessages: Message[] = history.messages.map((msg: HistoryMessage, index: number) => {
+          const baseMsg: Message = {
+            id: `history-${index}`,
+            role: msg.role as "user" | "assistant",
+            content: msg.content,
+          };
+
+          if (msg.role === "assistant") {
+            // Restore tool_calls
+            if (msg.tool_calls && msg.tool_calls.length > 0) {
+              baseMsg.toolCalls = msg.tool_calls.map(tc => ({
+                id: tc.id,
+                name: tc.name,
+                args: tc.args,
+                status: (tc.status === "done" ? "done" : tc.status === "error" ? "error" : "done") as "running" | "done" | "error",
+                output: undefined,
+              }));
+            }
+
+            // Restore thinking state
+            if (msg.thinking_steps && msg.thinking_steps.length > 0) {
+              baseMsg.thinking = {
+                steps: msg.thinking_steps,
+                isThinking: false,
+                startTime: msg.thinking_steps[0]?.timestamp || Date.now(),
+                durationSeconds: 0,
+              };
+              // Set display scenario based on thinking steps content
+              const hasPlanningStep = msg.thinking_steps.some(
+                step => step.type === "planning" || step.type === "replanning"
+              );
+              baseMsg.displayScenario = hasPlanningStep ? "planning" : "agent";
+            }
+
+            // Restore spawned tasks
+            if (msg.spawned_tasks && msg.spawned_tasks.length > 0) {
+              baseMsg.spawnedTasks = msg.spawned_tasks.map(task => ({
+                task_id: task.task_id,
+                subagent_type: task.subagent_type,
+                description: task.description,
+                status: task.status,
+                duration_ms: task.duration_ms,
+                toolCalls: (task.toolCalls || []).map(tc => ({
+                  id: tc.id,
+                  name: tc.name,
+                  args: tc.args,
+                  status: (tc.status === "done" ? "done" : tc.status === "error" ? "error" : "done") as "running" | "done" | "error",
+                  output: tc.output,
+                })),
+                output: task.output,
+              }));
+              // If we have spawned tasks, ensure displayScenario is set
+              if (!baseMsg.displayScenario) {
+                baseMsg.displayScenario = "agent";
+              }
+            }
+
+            // Restore display_scenario from backend if available
+            if (msg.display_scenario) {
+              baseMsg.displayScenario = msg.display_scenario;
+            }
+          }
+
+          return baseMsg;
+        });
         setMessages(loadedMessages);
       }
     } catch (err) {

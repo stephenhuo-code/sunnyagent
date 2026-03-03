@@ -36,9 +36,15 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 
-# 创建工作目录和输出目录
+# 创建工作目录、输入目录和输出目录
 WORKDIR /workspace
-RUN mkdir -p /output && chmod 777 /output
+RUN mkdir -p /output /input && chmod 777 /output /input
+
+# 复制白名单并创建离线包缓存（用于运行时自动安装）
+COPY whitelist.txt /tmp/whitelist.txt
+RUN mkdir -p /pip-cache && \
+    pip download --dest /pip-cache -r /tmp/whitelist.txt 2>/dev/null || true && \
+    rm /tmp/whitelist.txt
 
 # 保持容器运行（用于容器池）
 CMD ["sleep", "infinity"]

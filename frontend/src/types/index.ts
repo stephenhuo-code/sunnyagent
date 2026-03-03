@@ -9,6 +9,16 @@ export interface Agent {
 export interface Skill {
   name: string;
   description: string;
+  source?: string;
+  skill_type?: "atomic" | "workflow";
+}
+
+/** A user-invocable command from enabled plugins */
+export interface Command {
+  name: string;
+  description: string;
+  argument_hint: string;
+  plugin_name: string;
 }
 
 /** Todo item from DeepAgents TodoListMiddleware */

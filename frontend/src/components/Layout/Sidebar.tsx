@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef, ReactNode } from 'react';
-import { MessagesSquare, MessageSquarePlus, Settings, LogOut, User, FolderKanban, FolderPlus } from 'lucide-react';
+import { MessagesSquare, MessageSquarePlus, Settings, LogOut, User, FolderKanban, FolderPlus, Puzzle } from 'lucide-react';
 import { SidebarHeader } from './SidebarHeader';
 import { useAuth } from '../../hooks/useAuth';
 import { ConversationPopover } from '../Conversations/ConversationPopover';
@@ -15,6 +15,7 @@ import './Layout.css';
 interface SidebarProps {
   onNewConversation: () => void;
   onAdminClick?: () => void;
+  onPluginsClick?: () => void;
   children?: ReactNode | ((collapsed: boolean) => ReactNode);
   // Props for popover when collapsed
   conversations?: ConversationSummary[];
@@ -38,6 +39,7 @@ interface SidebarProps {
 export function Sidebar({
   onNewConversation,
   onAdminClick,
+  onPluginsClick,
   children,
   conversations = [],
   conversationsLoading = false,
@@ -227,6 +229,15 @@ export function Sidebar({
 
       {/* Bottom Navigation - Icon Row */}
       <div className="sidebar-footer">
+        {onPluginsClick && (
+          <button
+            className="sidebar-footer-icon"
+            onClick={onPluginsClick}
+            title="插件管理"
+          >
+            <Puzzle size={20} />
+          </button>
+        )}
         {isAdmin && !collapsed && (
           <button
             className="sidebar-footer-icon"

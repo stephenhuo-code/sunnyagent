@@ -1,0 +1,34 @@
+# 运行时可自动安装的包白名单（预下载到离线缓存）
+# 这些包可以在代码执行时自动安装，无需重建镜像
+
+# pandas 可选依赖
+xlrd
+xlsxwriter
+pyarrow
+fastparquet
+lxml
+beautifulsoup4
+html5lib
+sqlalchemy
+jinja2
+bottleneck
+numexpr
+
+# 科学计算与统计
+scipy
+scikit-learn
+statsmodels
+
+# 数据可视化扩展
+seaborn
+plotly
+
+# 网络请求
+requests
+
+# 编码检测
+chardet
+
+# 日期时间处理
+python-dateutil
+pytz

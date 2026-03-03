@@ -45,6 +45,7 @@ User → IntentAnalyzer (Rule → LLM 分类器链)
 | ActorFactory | `backend/aime/actor_factory.py` | 根据能力匹配选择 Agent |
 | ProgressManager | `backend/aime/progress_manager.py` | 任务状态追踪、DAG 依赖管理 |
 | ContextManager | `backend/aime/context_manager.py` | 任务间上下文传递、LRU 缓存 + PostgreSQL 持久化 |
+| HistoryManager | `backend/aime/history.py` | 历史消息优化：最近 N 轮 + 稀疏摘要 |
 | Checkpointer Store | `backend/checkpointer_store.py` | 共享 checkpointer + history_graph，消息持久化 |
 | Agent Registry | `backend/registry.py` | 中央 `AGENT_REGISTRY` 字典，Agent 通过 `register_agent()` 自注册 |
 | Deep Agents | `backend/agents/` | 每个专家使用 `create_deep_agent()` 创建，有独立的中间件栈 |
@@ -87,6 +88,81 @@ class AgentContext:
 - 意图分析：只看项目名和文件名（简化的语义信息）
 - Agent 执行：看完整上下文（含 file_id、read_file 工具提示）
 - 文件内容：通过 read_file 工具按需读取，不预加载
+
+### 历史消息管理与优化
+
+系统采用分层历史管理策略，平衡上下文质量和 Token 消耗：
+
+**核心组件**：
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| History Module | `backend/aime/history.py` | 历史消息优化工具函数 |
+| Checkpointer | `backend/checkpointer_store.py` | LangGraph 状态持久化 |
+
+#### 历史保留策略
+
+```
+对话历史结构:
+├── [摘要] 对话 1-10 的压缩摘要（LLM 生成）
+├── [完整] 对话 11 (user + assistant)
+├── [完整] 对话 12
+├── [完整] 对话 13
+├── [完整] 对话 14
+└── [完整] 对话 15 (最新)
+```
+
+**配置常量**（`backend/aime/history.py`）：
+
+| 常量 | 默认值 | 说明 |
+|------|--------|------|
+| `HISTORY_FULL_ROUNDS` | 5 | 完整保留最近 N 轮对话 |
+| `HISTORY_SUMMARY_INTERVAL` | 5 | 每 N 轮更新一次摘要 |
+| `HISTORY_SUMMARY_MAX_TOKENS` | 500 | 摘要最大 Token 数 |
+
+**工具函数**：
+
+```python
+# 准备优化后的历史消息
+recent_msgs, summary = await prepare_history_messages(thread_id, full_rounds=5)
+
+# 构建优化后的消息列表
+messages = build_optimized_messages(recent_msgs, summary, current_message, system_context)
+```
+
+#### 命令执行隔离
+
+为避免命令步骤加载完整对话历史（可能导致 ~100k prompt tokens），系统为命令执行创建独立的 `thread_id`：
+
+```python
+# 原始 thread_id: "a1b2c3d4" (用户对话)
+# 命令 thread_id: "cmd-analyze-e5f6g7h8" (独立执行)
+```
+
+**执行流程**：
+
+1. 用户发送 `/analyze 小米2025年客诉数量`
+2. 系统创建 `command_thread_id = f"cmd-{command_name}-{uuid4().hex[:8]}"`
+3. 所有命令步骤使用 `command_thread_id` 执行（避免加载历史）
+4. 最终结果仍然保存到原始 `thread_id`（保持对话连贯）
+
+**效果**：
+- Token 消耗：从 ~100k/步骤 降至 ~10k/步骤
+- 原始对话历史：完整保留，不受影响
+
+#### 输出合并策略
+
+命令执行完成后的输出策略：
+
+```python
+# 优先使用最后一步输出（通常是"展示发现"步骤）
+final_output = all_results[-1].get("output", "")
+
+# 如果最后一步没有输出，合并所有有输出的步骤
+if not final_output:
+    outputs = [r.get("output", "") for r in all_results if r.get("output")]
+    final_output = "\n\n---\n\n".join(outputs)
+```
 
 ### Streaming Pipeline
 
@@ -405,6 +481,7 @@ sunnyagent/
 │   │   ├── __init__.py      # 公开 API: stream_aime_response(), get_aime_planner()
 │   │   ├── context.py       # AgentContext, FileContext, SessionMetadata
 │   │   ├── context_manager.py # 任务间上下文存储和检索
+│   │   ├── history.py       # 历史消息优化（最近 N 轮 + 摘要）
 │   │   ├── planner.py       # AIMEPlanner 任务规划和执行
 │   │   ├── actor_factory.py # Agent 选择和实例化
 │   │   ├── progress_manager.py # 任务状态追踪

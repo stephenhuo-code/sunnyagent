@@ -11,13 +11,15 @@ MAX_EXCEL_ROWS = 500  # Excel 最多读取 500 行
 
 @tool
 async def read_file(
-    file_id: str,
+    file_path: str | None = None,
+    file_id: str | None = None,
     project_id: str | None = None,
     section: str | None = None,
 ) -> str:
-    """读取文件内容 (统一工具，支持上传文件和项目文件)。
+    """读取文件内容 (统一工具，支持绝对路径、上传文件和项目文件)。
 
-    这是读取文件的首选工具，可以处理两种类型的文件：
+    这是读取文件的首选工具，支持三种方式：
+    - 绝对路径（推荐）：直接提供 file_path
     - 用户上传文件：只需提供 file_id
     - 项目文件：需要同时提供 file_id 和 project_id
 
@@ -29,7 +31,8 @@ async def read_file(
     - PowerPoint 文件：pptx
 
     Args:
-        file_id: 文件 ID
+        file_path: 文件的绝对路径（推荐使用，Context 中会显示路径）
+        file_id: 文件 ID（可选，用于旧版 API 兼容）
         project_id: 项目 ID (项目文件需要，上传文件可省略)
         section: 可选，指定读取的部分
             - Excel: sheet 名称（如 "Sheet1"）
@@ -39,6 +42,17 @@ async def read_file(
     Returns:
         文件内容的文本形式
     """
+    # 优先使用 file_path
+    if file_path:
+        path = Path(file_path)
+        if not path.exists():
+            return f"错误：文件不存在 {file_path}"
+        return _read_file_content(path, section)
+
+    # 兼容旧版 file_id 方式
+    if not file_id:
+        return "错误：需要提供 file_path 或 file_id"
+
     if project_id:
         # 项目文件路径 - 异步读取
         return await _read_project_file_async(file_id, project_id, section)
@@ -71,7 +85,8 @@ async def _read_project_file_async(
 
 def _read_uploaded_file_impl(file_id: str, section: str | None = None) -> str:
     """读取上传文件的实现"""
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
+    from backend.core.storage import get_temp_files_dir
+    file_dir = get_temp_files_dir() / file_id
     if not file_dir.exists():
         return f"错误：找不到文件 ID {file_id}"
 
@@ -320,7 +335,8 @@ def read_uploaded_file(file_id: str) -> str:
     Returns:
         文件内容的文本形式
     """
-    file_dir = Path(f"/tmp/sunnyagent_files/{file_id}")
+    from backend.core.storage import get_temp_files_dir
+    file_dir = get_temp_files_dir() / file_id
     if not file_dir.exists():
         return f"错误：找不到文件 ID {file_id}"
 
