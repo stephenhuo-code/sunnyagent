@@ -6,7 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SunnyAgent — a full-stack web app (FastAPI + React) with an AIME (Autonomous Intent-driven Multi-agent Executor) architecture that routes user messages to specialized deep agents for web research, SQL database queries, multi-step orchestration, file processing, and sandboxed code execution. Includes user authentication, conversation management, and admin user management.
 
+## Meta-Agent 优化系统
+- 当被要求执行 Skill 优化、自动迭代、或 Meta-Agent 相关任务时，先读取 `specs/META_AGENT_SPEC.md`
+
 ## Development Commands
+
+
 
 ### Quick Start (Recommended)
 ```bash
