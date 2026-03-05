@@ -13,7 +13,7 @@ SunnyAgent 是一个基于 **LangGraph Supervisor + Deep Agent** 架构的多 Ag
 
 - **语言**：Python（后端）+ TypeScript（前端）
 - **架构**：Supervisor 路由 → 专业 Deep Agent（research / sql / general / package agents）
-- **可扩展性**：支持通过 `packages/` 目录自动加载 Agent，每个 Package Agent 包含 `AGENTS.md`（系统提示词）和 `skills/` 目录
+- **可扩展性**：支持通过 `packages/` 目录自动加载 Plugin，每个 Plugin 包含 `.plugin/plugin.json`（元数据）、`README.md`（说明）、`commands/`（命令）和 `skills/`（技能）目录
 - **技能系统**：`backend/skills/` 下的 registry + loader，以及 `skills/` 顶层目录存放技能定义（SKILL.md 格式）
 - **监控**：已集成 Langfuse，记录所有 Agent 对话的 traces 和 scores
 - **代码执行**：Docker 沙箱环境执行 Python 代码
@@ -24,7 +24,7 @@ SunnyAgent 是一个基于 **LangGraph Supervisor + Deep Agent** 架构的多 Ag
 
 1. 读取用户提供的**测试数据集**（输入 + 期望输出）
 2. 分析当前 Skills 在测试集上的表现
-3. **自动生成、修改、优化 Skills**（包括 SKILL.md 和 Package Agent 的 skills）
+3. **自动生成、修改、优化 Commands 和 Skills**（包括 `commands/*.md` 和 `skills/*/SKILL.md`）
 4. 反复迭代直到达到目标分数或最大迭代次数
 5. 全程通过 Langfuse 记录优化过程
 
@@ -49,19 +49,19 @@ SunnyAgent 是一个基于 **LangGraph Supervisor + Deep Agent** 架构的多 Ag
            │                  │                   │
            ▼                  ▼                   ▼
    ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-   │   Skill       │   │  Evaluator   │   │  Analyzer    │
-   │   Generator   │   │  Module      │   │  Module      │
-   │              │   │              │   │              │
+   │   Command/    │   │  Evaluator   │   │  Analyzer    │
+   │   Skill       │   │  Module      │   │  Module      │
+   │   Generator   │   │              │   │              │
    │ 生成/修改     │   │ 调用现有框架  │   │ 分析失败案例  │
-   │ SKILL.md     │   │ 跑测试集     │   │ 输出改进建议  │
-   │ AGENTS.md    │   │ 收集结果     │   │              │
+   │ commands/*.md │   │ 跑测试集     │   │ 输出改进建议  │
+   │ SKILL.md     │   │ 收集结果     │   │              │
    └──────────────┘   └──────────────┘   └──────────────┘
            │                  │                   │
            ▼                  ▼                   ▼
    ┌─────────────────────────────────────────────────────┐
    │                  SunnyAgent 现有框架                  │
    │  ├── backend/skills/ (registry + loader)             │
-   │  ├── packages/*/AGENTS.md + skills/*/SKILL.md        │
+   │  ├── packages/*/{commands/*.md, skills/*/SKILL.md}   │
    │  ├── skills/ (顶层技能目录)                           │
    │  └── Langfuse (traces, scores, datasets)             │
    └─────────────────────────────────────────────────────┘
@@ -72,7 +72,7 @@ SunnyAgent 是一个基于 **LangGraph Supervisor + Deep Agent** 架构的多 Ag
 | 模块 | 职责 | 实现方式 |
 |------|------|---------|
 | **Orchestrator** | 管理迭代循环、判断收敛/终止、协调各模块 | Claude Code 自身（读取本文档后按流程执行） |
-| **Skill Generator** | 生成新 Skill 或修改现有 Skill | Claude Code 直接写入文件（遵循 Skill Schema） |
+| **Command/Skill Generator** | 生成新 Command/Skill 或修改现有文件 | Claude Code 直接写入文件（遵循 Plugin Schema） |
 | **Evaluator** | 用测试集评估当前 Skill 表现 | 调用 `meta_agent/eval_runner.py`（需创建） |
 | **Analyzer** | 对失败 case 做根因分析，输出改进建议 | Claude Code 分析评估结果后推理 |
 
@@ -167,10 +167,10 @@ strategy:
 
 1. 读取 `datasets/` 目录下指定的 `.jsonl` 数据集
 2. 对每个 case，通过 SunnyAgent 的 API 接口（`POST /api/chat`）发送请求
-3. 收集响应结果（完整的 SSE 流）
-4. 将实际输出与期望输出对比，计算各维度分数
-5. 输出结构化的评估结果到 `results/` 目录
-6. 将评估数据写入 Langfuse
+3. 收集响应结果（完整的 SSE 流）— SunnyAgent 自动将 trace 写入 Langfuse
+4. 从 Langfuse 读取对应的 trace，将实际输出与期望输出对比
+5. 计算各维度分数，将 Score 写入 Langfuse（关联到 trace）
+6. 输出结构化的评估结果到 `results/` 目录
 
 **输出格式**（`results/eval_{timestamp}.json`）：
 
@@ -252,84 +252,236 @@ python meta_agent/eval_runner.py --dataset meta_agent/datasets/test_v1.jsonl --t
 
 ---
 
-## 4. Skill Schema 规范
+## 4. Plugin Schema 规范（当前实际结构）
 
-### 4.1 Package Agent Skill（`packages/*/skills/*/SKILL.md`）
+> **重要**：以下规范基于 SunnyAgent 仓库中 `packages/` 目录的实际结构。
 
-这是 SunnyAgent 中 Package Agent 使用的 Skill 格式。Claude Code 在生成或修改 Skill 时必须遵循此格式：
+### 4.1 Plugin 目录结构
+
+```
+packages/<plugin-name>/
+├── .plugin/
+│   └── plugin.json          # 插件元数据（必需）
+├── README.md                 # 插件说明文档（必需）
+├── commands/                 # 命令定义目录（可选）
+│   └── <command-name>.md     # 命令定义文件
+└── skills/                   # 技能定义目录（可选）
+    └── <skill-name>/
+        ├── SKILL.md          # 技能定义文件（必需）
+        ├── references/       # 技能参考资料（可选）
+        └── scripts/          # 技能脚本（可选）
+```
+
+### 4.2 plugin.json 格式
+
+位于 `.plugin/plugin.json`，定义插件元数据：
+
+```json
+{
+  "name": "manufacturing-qc",
+  "version": "0.1.0",
+  "description": "制造业质量保障工具包：质检报告生成、质量数据分析、SOP编写、8D报告、客诉分析",
+  "author": {
+    "name": "作者名"
+  },
+  "keywords": ["manufacturing", "quality", "inspection", "QC"]
+}
+```
+
+### 4.3 Command 文件格式（`commands/*.md`）
+
+命令是用户通过 `/command-name` 显式调用的工作流。
 
 ```markdown
-# {Skill 名称}
+---
+description: 命令的简短描述
+allowed-tools: Read, Write, Edit, Bash(python3:*)
+argument-hint: [参数提示]
+skills:
+  - skill-name-1
+  - skill-name-2
+---
 
-{Skill 的详细指令内容，告诉 Agent 在执行此 Skill 时应该怎么做}
+命令的详细说明文字。
 
-## 输入要求
-{描述此 Skill 期望的输入格式和内容}
+## 用法
 
-## 输出要求
-{描述此 Skill 应该产出的输出格式和内容}
+```
+/command-name <参数说明>
+```
 
-## 执行步骤
-1. {步骤1}
-2. {步骤2}
+## workflow
+
+### 1. 步骤名称
+capabilities: text_only
+skills: none
+
+**步骤目标**: 描述此步骤要完成什么
+
+**输入**: 此步骤的输入
+**输出**: 此步骤的输出
+
+步骤的详细说明...
+
+### 2. 下一步骤
+capabilities: file_read, code_execution
+skills: data-profiler
+
 ...
 
-## 示例
-{给出 1-3 个输入输出示例}
-
 ## 注意事项
-- {约束条件}
-- {边界情况处理}
+
+- 注意事项 1
+- 注意事项 2
 ```
 
-### 4.2 Package Agent 定义（`packages/*/AGENTS.md`）
+**Command frontmatter 字段说明**：
 
-每个 Package Agent 的系统提示词文件：
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `description` | string | 是 | 命令的简短描述 |
+| `allowed-tools` | string | 否 | 允许使用的工具列表 |
+| `argument-hint` | string | 否 | 参数提示，显示给用户 |
+| `skills` | string[] | 否 | 此命令依赖的技能列表 |
 
-```markdown
-# {Agent 名称}
+**Workflow 步骤的 capabilities 值**：
+- `text_only`: 只做文本分析，不读取文件或执行代码
+- `file_read`: 可以读取文件
+- `code_execution`: 可以执行代码
 
-{Agent 的角色描述和核心能力}
+### 4.4 Skill 文件格式（`skills/*/SKILL.md`）
 
-## 职责范围
-{明确此 Agent 负责处理什么类型的任务}
-
-## 可用 Skills
-{列出此 Agent 下的所有 Skills 及其用途}
-
-## 工作流程
-{描述 Agent 处理任务的标准流程}
-
-## 约束
-{不应该做什么，边界在哪里}
-```
-
-### 4.3 顶层 Skill（`skills/*/SKILL.md`）
-
-遵循标准 Agent Skills 规范（YAML frontmatter + Markdown body）：
+技能是 Agent 内部可调用的能力模块。
 
 ```markdown
 ---
 name: skill-name
-description: 清晰描述此 Skill 的用途和触发时机
+description: Skill 的描述，说明何时应该使用此技能
 ---
 
-# Skill 名称
+# 技能标题
 
-{详细指令内容}
+## 执行流程
+
+### 第一步：准备
+说明...
+
+### 第二步：执行
+说明...
+
+### 第三步：验证
+说明...
+
+## 重要提示
+
+- 提示 1
+- 提示 2
 ```
 
-### 4.4 Skill 注册（`backend/skills/`）
+**Skill frontmatter 字段说明**：
 
-`backend/skills/registry.py` 中的 `SKILL_REGISTRY` 管理所有 Skill 的注册。新 Skill 创建后需确保能被 `backend/skills/loader.py` 正确加载。
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 是 | 技能的唯一标识符（kebab-case） |
+| `description` | string | 是 | 技能描述，用于 Agent 判断何时调用 |
 
-**创建新 Skill 的 Checklist**：
+### 4.5 Skill 参考资料（`skills/*/references/`）
 
-1. ✅ 创建 `skills/<name>/SKILL.md` 或 `packages/<agent>/skills/<name>/SKILL.md`
-2. ✅ 确认 SKILL.md 遵循上述格式
-3. ✅ 确认 loader 能扫描到（检查目录位置是否正确）
-4. ✅ 通过 `GET /api/skills` 验证 Skill 已被注册
-5. ✅ 运行测试集验证 Skill 效果
+复杂技能可以包含参考资料目录，存放模板、示例输出等：
+
+```
+skills/data-context-extractor/
+├── SKILL.md
+├── references/
+│   ├── domain-template.md
+│   ├── domain-template_zh.md
+│   ├── example-output.md
+│   ├── example-output_zh.md
+│   └── sql-dialects.md
+└── scripts/
+    └── (可选的脚本文件)
+```
+
+### 4.6 README.md 格式
+
+插件说明文档，介绍插件功能和使用方法：
+
+```markdown
+# Plugin Name — 插件描述
+
+简要介绍插件的用途和目标用户。
+
+## 功能概览
+
+### 快捷命令
+
+| 命令 | 功能 |
+|------|------|
+| `/command-1` | 命令 1 功能描述 |
+| `/command-2` | 命令 2 功能描述 |
+
+### 知识技能
+
+| 技能 | 说明 |
+|------|------|
+| skill-1 | 技能 1 说明 |
+| skill-2 | 技能 2 说明 |
+
+## 使用示例
+
+**示例 1：**
+> /command-1 参数说明
+
+## 支持的标准/规范
+
+- 标准 1
+- 标准 2
+```
+
+### 4.7 旧格式兼容（AGENTS.md）
+
+> **注意**：`AGENTS.md` 是旧的 Package Agent 定义格式，目前仅 `content-writer` 包在使用。
+> 新插件应使用 `README.md` + `commands/` + `skills/` 的结构。
+
+旧格式的 AGENTS.md 定义 Agent 的系统提示词：
+
+```markdown
+# Agent Name
+
+Agent 的角色描述和核心能力。
+
+## Brand Voice
+品牌风格定义...
+
+## Writing Standards
+写作标准...
+```
+
+### 4.8 创建/修改 Plugin 的 Checklist
+
+**创建新 Plugin**：
+
+1. ✅ 创建目录 `packages/<plugin-name>/`
+2. ✅ 创建 `.plugin/plugin.json` 元数据文件
+3. ✅ 创建 `README.md` 说明文档
+4. ✅ 创建 `commands/` 目录（如有命令）
+5. ✅ 创建 `skills/` 目录（如有技能）
+6. ✅ 重启服务验证加载成功
+
+**创建新 Command**：
+
+1. ✅ 在 `commands/` 目录创建 `<command-name>.md`
+2. ✅ 填写 YAML frontmatter（description 必填）
+3. ✅ 定义 workflow 步骤
+4. ✅ 测试命令可被 `/command-name` 调用
+
+**创建新 Skill**：
+
+1. ✅ 在 `skills/` 目录创建 `<skill-name>/SKILL.md`
+2. ✅ 填写 YAML frontmatter（name, description 必填）
+3. ✅ 编写技能指令内容
+4. ✅ 如需要，添加 `references/` 目录存放参考资料
+5. ✅ 在相关 Command 的 frontmatter 中引用此技能
 
 ---
 
@@ -427,41 +579,77 @@ STEP 5: 决策
 
 ## 6. 与 Langfuse 的集成
 
-### 6.1 数据写入
+> **重要**：Meta-Agent **复用** SunnyAgent 已有的 Langfuse 实例，不单独部署。
 
-每次评估运行写入 Langfuse 的数据：
+### 6.1 集成架构
 
-| 数据类型 | 内容 | 用途 |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Langfuse 实例                           │
+│                  (SunnyAgent 已部署)                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌──────────────┐              ┌──────────────┐            │
+│   │   Dataset    │              │    Traces    │            │
+│   │  (测试数据集) │              │  (执行记录)   │            │
+│   └──────┬───────┘              └──────┬───────┘            │
+│          │                             │                     │
+│          │ 写入                        │ 自动产生            │
+│          │                             │                     │
+└──────────┼─────────────────────────────┼─────────────────────┘
+           │                             │
+           │                             │
+    ┌──────┴───────┐              ┌──────┴───────┐
+    │  Meta-Agent  │              │  SunnyAgent  │
+    │              │─── 调用 ────→│              │
+    │  - 创建 Dataset             │  - 执行测试   │
+    │  - 读取 Traces              │  - 产生 Trace │
+    │  - 计算 Score               │              │
+    └──────────────┘              └──────────────┘
+```
+
+### 6.2 Meta-Agent 写入 Langfuse
+
+| 数据类型 | 说明 | 用途 |
 |---------|------|------|
-| **Trace** | 每个 test case 的完整执行记录 | 追溯问题 |
-| **Score** | correctness, skill_trigger, response_quality, efficiency | 量化表现 |
-| **Session** | 以 `meta-agent-opt-{iteration}` 为 session 名 | 按迭代分组 |
-| **Dataset** | 测试数据集版本 | 支持 A/B 对比 |
+| **Dataset** | 测试数据集（case_id, input, expected_*） | 管理测试用例 |
+| **Dataset Item** | 单个测试用例 | 关联 trace |
+| **Score** | 评估分数（correctness, skill_trigger 等） | 量化表现 |
 
-### 6.2 数据读取
+### 6.3 Meta-Agent 读取 Langfuse
 
-从 Langfuse 读取的数据：
+| 数据类型 | 说明 | 用途 |
+|---------|------|------|
+| **Trace** | SunnyAgent 执行产生的完整记录 | 分析失败原因 |
+| **Span** | Trace 中的具体步骤 | 定位问题环节 |
+| **Generation** | LLM 调用记录 | 分析 prompt 效果 |
 
-- 历史 traces 中的失败模式（用于丰富 Analyzer 的分析）
-- 用户真实对话中的低分 case（用于扩充测试数据集）
-- 各 Skill 的历史表现趋势
+### 6.4 Langfuse API 封装
 
-### 6.3 Langfuse 查询脚本
-
-`meta_agent/langfuse_integration.py` 应提供以下功能：
+`meta_agent/langfuse_client.py` 应提供以下功能：
 
 ```python
-# 查询最近一次评估的结果
-get_latest_eval_results(session_prefix="meta-agent-opt") -> dict
+# === 写入操作 ===
 
-# 查询某个 Skill 的历史表现
-get_skill_performance_history(skill_name: str, limit: int = 20) -> list
+# 创建或更新测试数据集
+create_dataset(name: str, items: list[dict]) -> str  # 返回 dataset_id
 
-# 从生产 traces 中提取低分 case 作为新的测试数据
-extract_hard_cases(min_date: str, max_score: float = 0.5) -> list
+# 为 trace 添加评分
+add_score(trace_id: str, name: str, value: float, comment: str = None) -> None
 
-# 将评估结果写入 Langfuse
-log_evaluation(iteration: int, results: dict) -> None
+# === 读取操作 ===
+
+# 根据 session 获取最近的 traces
+get_traces_by_session(session_id: str, limit: int = 100) -> list[Trace]
+
+# 获取单个 trace 的详情（含 spans, generations）
+get_trace_detail(trace_id: str) -> TraceDetail
+
+# 查询某个 Command/Skill 的历史表现
+get_performance_history(name: str, days: int = 30) -> list[dict]
+
+# 从生产 traces 中提取低分 case
+extract_hard_cases(min_date: str, max_score: float = 0.5) -> list[dict]
 ```
 
 ---
@@ -481,9 +669,9 @@ log_evaluation(iteration: int, results: dict) -> None
 - 考虑拆分过于宽泛的 Skill
 
 **`wrong_agent_routed`**：
-- 检查 Package Agent 的 AGENTS.md，调整职责描述
+- 检查 Plugin 的 README.md，调整职责描述
 - 检查 Supervisor 的 routing 逻辑
-- 在 AGENTS.md 中添加 "不处理" 的声明
+- 在 README.md 中明确 "不处理" 的场景
 
 **`output_incorrect`**：
 - 优化 SKILL.md 中的 prompt_template / 执行步骤
@@ -516,7 +704,7 @@ log_evaluation(iteration: int, results: dict) -> None
 - **每次只改一个 Skill**：确保能归因到具体修改
 - **每次修改后跑完整测试集**：确保无回归
 - **保留所有版本**：通过 git commit 追踪每轮修改
-- **不修改框架核心代码**：只修改 SKILL.md、AGENTS.md 和测试相关文件
+- **不修改框架核心代码**：只修改 `commands/*.md`、`skills/*/SKILL.md`、`README.md`、`plugin.json` 和测试相关文件
 - **不修改 Supervisor 路由逻辑**：除非明确指示
 
 ### 8.2 不应修改的文件
@@ -535,11 +723,12 @@ docker-compose.yml              # 基础设施配置
 ### 8.3 可以修改的文件
 
 ```
-skills/**/*.md                  # 顶层技能定义
-packages/*/AGENTS.md            # Package Agent 系统提示词
-packages/*/skills/**/*.md       # Package Agent 技能定义
+packages/*/.plugin/plugin.json  # Plugin 元数据
+packages/*/README.md            # Plugin 说明文档
+packages/*/commands/*.md        # Plugin 命令定义
+packages/*/skills/*/SKILL.md    # Plugin 技能定义
+packages/*/skills/*/references/*.md  # 技能参考资料
 meta_agent/**                   # Meta-Agent 系统自身
-backend/skills/registry.py      # 技能注册表（新增注册项时）
 ```
 
 ---
@@ -615,19 +804,26 @@ sunnyagent/
 │   │   ├── research.py         # Research Agent（Tavily 搜索）
 │   │   ├── sql.py              # SQL Agent（Chinook DB）
 │   │   ├── general.py          # General 兜底 Agent
-│   │   └── loader.py           # Package Agent 加载器（扫描 packages/）
+│   │   └── loader.py           # Plugin 加载器（扫描 packages/）
 │   ├── skills/
 │   │   ├── registry.py         # SKILL_REGISTRY
 │   │   └── loader.py           # Skill 加载器（从 skills/ 加载）
 │   └── tools/
 │       ├── sandbox.py          # Docker 沙箱代码执行
 │       └── file_tools.py       # 文件读取工具
-├── packages/                   # 可扩展 Agent 包
-│   └── content-writer/         # 示例 Package Agent
-│       ├── AGENTS.md           # Agent 系统提示词
-│       └── skills/
-│           ├── blog-post/SKILL.md
-│           └── social-media/SKILL.md
+├── packages/                   # 可扩展 Plugin 包
+│   ├── manufacturing-qc/       # 制造业质量保障 Plugin（示例）
+│   │   ├── .plugin/plugin.json # Plugin 元数据
+│   │   ├── README.md           # Plugin 说明
+│   │   ├── commands/           # 命令定义
+│   │   │   └── complaint-analysis.md
+│   │   └── skills/             # 技能定义
+│   │       └── data-profiler/SKILL.md
+│   └── data/                   # 数据分析 Plugin（示例）
+│       ├── .plugin/plugin.json
+│       ├── readme.md
+│       ├── commands/           # 多个命令
+│       └── skills/             # 多个技能
 ├── skills/                     # 顶层技能目录
 │   ├── anthropic/              # Anthropic 官方技能（git submodule）
 │   └── custom/                 # 自定义技能

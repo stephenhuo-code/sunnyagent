@@ -1,0 +1,40 @@
+# Meta-Agent Configuration
+# This is an example configuration file with default values.
+# Environment variables take precedence over values defined here.
+
+# Optimization settings
+optimization:
+  # Required: Target plugin to optimize
+  target_plugin: "manufacturing-qc"
+
+  # Required: Path to dataset file (relative to meta_agent/)
+  dataset_path: "test-resources/datasets/qc-plugin.jsonl"
+
+  # Completion criteria (all have sensible defaults)
+  # target_score: 0.8           # Target score [0, 1] - optimization stops when reached
+  # max_iterations: 5           # Maximum iterations to prevent infinite optimization
+  # regression_threshold: 0.05  # Triggers rollback when score drops by this amount
+  # patience: 2                 # Early termination after this many rounds without improvement
+  # min_improvement: 0.02       # Below this is considered no improvement
+
+  # Execution settings
+  # test_project_name: "meta-agent-test"
+  # cleanup_on_complete: false
+
+  # Git settings
+  # auto_commit: true
+  # commit_prefix: "meta-agent:"
+
+# SunnyAgent connection (shared with SunnyAgent deployment)
+# Environment variables: SUNNYAGENT_BASE_URL, SUNNYAGENT_ADMIN_USERNAME, SUNNYAGENT_ADMIN_PASSWORD
+sunnyagent:
+  base_url: "http://localhost:8008"
+  admin_username: "admin"
+  admin_password: ${ADMIN_PASSWORD}  # From environment variable
+
+# Langfuse connection (shared with SunnyAgent)
+# Environment variables: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL
+langfuse:
+  public_key: ${LANGFUSE_PUBLIC_KEY}
+  secret_key: ${LANGFUSE_SECRET_KEY}
+  base_url: "http://localhost:3001"

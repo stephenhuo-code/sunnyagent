@@ -1,0 +1,183 @@
+"""Report generator for optimization results."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from meta_agent.models.evaluation import EvaluationResult
+from meta_agent.models.optimization import Checkpoint, IterationReport
+
+
+class ReportGenerator:
+    """Generate Markdown reports for optimization results."""
+
+    def __init__(self, output_dir: str):
+        """
+        Initialize report generator.
+
+        Args:
+            output_dir: Directory for saving reports
+        """
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def generate_final_report(
+        self,
+        checkpoint: Checkpoint,
+        iteration_reports: list[IterationReport] | None = None,
+    ) -> str:
+        """
+        Generate final optimization report.
+
+        Args:
+            checkpoint: Final checkpoint
+            iteration_reports: List of iteration reports
+
+        Returns:
+            Path to generated report file
+        """
+        report_lines = [
+            f"# Meta-Agent Optimization Report",
+            f"",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Optimization ID**: `{checkpoint.optimization_id}`",
+            f"",
+            f"## Summary",
+            f"",
+            f"| Metric | Value |",
+            f"|--------|-------|",
+            f"| Target Plugin | {checkpoint.config.target_plugin} |",
+            f"| Final Score | {checkpoint.best_score:.2f} |",
+            f"| Target Score | {checkpoint.config.target_score:.2f} |",
+            f"| Status | {checkpoint.state.value} |",
+            f"| Total Iterations | {checkpoint.current_iteration} |",
+            f"| Best Iteration | {checkpoint.best_iteration} |",
+            f"",
+        ]
+
+        # Score history
+        if checkpoint.score_history:
+            report_lines.extend([
+                f"## Score History",
+                f"",
+            ])
+            for i, score in enumerate(checkpoint.score_history, 1):
+                marker = " 🏆" if i == checkpoint.best_iteration else ""
+                report_lines.append(f"- Iteration {i}: {score:.3f}{marker}")
+            report_lines.append("")
+
+        # File changes
+        if checkpoint.modified_files:
+            report_lines.extend([
+                f"## File Changes",
+                f"",
+                f"| File | Type | Iteration | Commit |",
+                f"|------|------|-----------|--------|",
+            ])
+            for mod in checkpoint.modified_files:
+                commit_short = mod.git_commit_hash[:7] if mod.git_commit_hash else "N/A"
+                report_lines.append(
+                    f"| `{mod.file_path}` | {mod.modification_type} | {mod.iteration} | `{commit_short}` |"
+                )
+            report_lines.append("")
+
+        # Iteration details
+        if iteration_reports:
+            report_lines.extend([
+                f"## Iteration Details",
+                f"",
+            ])
+            for report in iteration_reports:
+                delta_str = f"+{report.score_delta:.3f}" if report.score_delta > 0 else f"{report.score_delta:.3f}"
+                report_lines.extend([
+                    f"### Iteration {report.iteration}",
+                    f"",
+                    f"- Score: {report.score_before:.3f} → {report.score_after:.3f} ({delta_str})",
+                    f"- Decision: {report.decision}",
+                ])
+                if report.langfuse_evaluation_url:
+                    report_lines.append(f"- [View in Langfuse]({report.langfuse_evaluation_url})")
+                if report.analysis_summary:
+                    report_lines.extend([
+                        f"",
+                        f"**Analysis Summary**:",
+                        f"",
+                        report.analysis_summary,
+                    ])
+                report_lines.append("")
+
+        # Configuration
+        report_lines.extend([
+            f"## Configuration",
+            f"",
+            f"```yaml",
+            f"target_plugin: {checkpoint.config.target_plugin}",
+            f"dataset_path: {checkpoint.config.dataset_path}",
+            f"target_score: {checkpoint.config.target_score}",
+            f"max_iterations: {checkpoint.config.max_iterations}",
+            f"regression_threshold: {checkpoint.config.regression_threshold}",
+            f"patience: {checkpoint.config.patience}",
+            f"min_improvement: {checkpoint.config.min_improvement}",
+            f"```",
+            f"",
+        ])
+
+        # Error message if failed
+        if checkpoint.error_message:
+            report_lines.extend([
+                f"## Error",
+                f"",
+                f"```",
+                f"{checkpoint.error_message}",
+                f"```",
+                f"",
+            ])
+
+        # Footer
+        report_lines.extend([
+            f"---",
+            f"",
+            f"*Generated by Meta-Agent Plugin Optimization System*",
+        ])
+
+        # Write report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = self.output_dir / f"report-{timestamp}.md"
+        report_content = "\n".join(report_lines)
+
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report_content)
+
+        return str(report_path)
+
+    def generate_iteration_summary(
+        self,
+        evaluation: EvaluationResult,
+        iteration: int,
+    ) -> str:
+        """Generate a short iteration summary."""
+        lines = [
+            f"## Iteration {iteration} Summary",
+            f"",
+            f"- **Score**: {evaluation.overall_score:.2f}",
+            f"- **Pass Rate**: {evaluation.pass_rate:.1%}",
+            f"- **Passed**: {evaluation.passed_cases}/{evaluation.total_cases}",
+            f"- **Duration**: {evaluation.duration_seconds:.1f}s",
+        ]
+
+        if evaluation.langfuse_dashboard_url:
+            lines.append(f"- [View in Langfuse]({evaluation.langfuse_dashboard_url})")
+
+        if evaluation.failed_case_details:
+            lines.extend([
+                f"",
+                f"### Top Failures",
+            ])
+            for case in evaluation.failed_case_details[:5]:
+                lines.append(
+                    f"- `{case.case_id}`: {case.failure_category.value}"
+                )
+
+        return "\n".join(lines)

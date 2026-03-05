@@ -1,0 +1,31 @@
+case_id,input,command,expected_skill,expected_output_contains,expected_behavior,tags,context_files,project_config
+# ============================================================================
+# Meta-Agent 测试数据集模板 (CSV 格式)
+# ============================================================================
+# 字段说明:
+#   case_id              - 唯一标识，建议格式: plugin_001 (必填)
+#   input                - 用户输入消息，Command 通过 /command-name 显式调用 (必填)
+#   command              - Command 名称（元数据，用于分组统计，可选）
+#   expected_skill       - 期望触发的 Skill 名称（可选）
+#   expected_output_contains - 输出应包含的关键词，JSON 数组格式
+#   expected_behavior    - 期望行为的自然语言描述（必填，用于 LLM 评估）
+#   tags                 - 标签，JSON 数组格式（可选）
+#   context_files        - 测试时选中的文件路径，JSON 数组格式（相对于 test-resources/files/）
+#   project_config       - 项目配置，JSON 对象格式（可选）
+#
+# 重要说明:
+#   - Command 是用户显式调用的，通过 /command-name 包含在 input 中
+#   - command 字段仅用于元数据标记，便于按 Command 分组分析结果
+#   - CSV 格式不支持 conversation_history 字段，多轮对话测试请使用 JSONL 格式
+#   - context_files 中的文件需要预先放到 test-resources/files/ 目录
+# ============================================================================
+# 示例数据（请删除或修改以下示例行）
+# ============================================================================
+qc_001,/quality-data 分析这批产品的质量数据,quality-data,data-profiler,"[""CPK"",""合格率"",""统计""]",应该分析数据并返回 CPK、合格率等统计指标,"[""quality"",""analysis""]","[""test-data/quality-sample.csv""]",
+qc_002,/8d-report 写一份8D报告,8d-report,,"[""问题描述"",""根本原因"",""纠正措施""]",应该生成完整的8D报告模板包含所有8个步骤,"[""report"",""8d""]",,
+qc_003,/inspection-report 检查这个产品的外观缺陷,inspection-report,quality-inspection,"[""检验结果"",""缺陷类型""]",应该启动质量检验流程并记录缺陷信息,"[""inspection"",""defect""]","[""test-data/product-image.jpg""]",
+qc_004,/complaint-analysis 分析客户投诉,complaint-analysis,quality-analysis,"[""投诉原因"",""改进建议""]",应该分析客户投诉数据并给出根因分析和改进建议,"[""complaint"",""analysis""]","[""test-data/complaints.csv""]",
+qc_005,/write-sop 帮我写一份 SOP 文档,write-sop,,"[""目的"",""范围"",""步骤""]",应该生成标准操作规程文档模板,"[""sop"",""document""]",,"{""name"":""sop-test"",""reuse"":true}"
+# ============================================================================
+# 在下方添加您的测试用例
+# ============================================================================

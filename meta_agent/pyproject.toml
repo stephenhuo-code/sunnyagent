@@ -1,0 +1,46 @@
+[project]
+name = "meta-agent"
+version = "0.1.0"
+description = "Meta-Agent Plugin Optimization System for SunnyAgent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "langfuse>=3.0.0",
+    "httpx>=0.27.0",
+    "gitpython>=3.1.0",
+    "pyyaml>=6.0.0",
+    "pydantic>=2.0.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "pyright>=1.1.0",
+]
+
+[project.scripts]
+meta-agent = "meta_agent.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meta_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.pyright]
+include = ["src/meta_agent"]
+exclude = ["tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
